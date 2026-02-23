@@ -32,9 +32,11 @@ type VariableUpsertData = { variableCollectionUpsert?: boolean | null };
 type ServiceSourceQuery = {
   service: {
     serviceInstances: {
-      nodes: Array<{
-        environmentId: string;
-        source: { image?: string; repo?: string } | null;
+      edges: Array<{
+        node: {
+          environmentId: string;
+          source: { image?: string; repo?: string } | null;
+        };
       }>;
     };
   };
@@ -109,11 +111,13 @@ async function resolveSource(
     query GetServiceSource($serviceId: String!) {
       service(id: $serviceId) {
         serviceInstances {
-          nodes {
-            environmentId
-            source {
-              image
-              repo
+          edges {
+            node {
+              environmentId
+              source {
+                image
+                repo
+              }
             }
           }
         }
@@ -123,7 +127,7 @@ async function resolveSource(
 
   try {
     const data = await railwayGql<ServiceSourceQuery>(query, { serviceId: sourceServiceId });
-    const nodes = data.service?.serviceInstances?.nodes ?? [];
+    const nodes = (data.service?.serviceInstances?.edges ?? []).map((e) => e.node);
     // Prefer the matching environment, fall back to first node
     const match = nodes.find((n) => n.environmentId === environmentId) ?? nodes[0];
     return match?.source ?? null;
