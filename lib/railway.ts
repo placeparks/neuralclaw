@@ -101,7 +101,6 @@ async function createService(
   const attempts: Array<Record<string, unknown>> = [
     { projectId, name, sourceServiceId },
     { projectId, name, templateServiceId: sourceServiceId },
-    { projectId, name },
   ];
 
   let lastError: string | null = null;
