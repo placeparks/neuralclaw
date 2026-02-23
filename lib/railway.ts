@@ -31,6 +31,7 @@ type ServiceCreateData = { serviceCreate?: { id: string; name?: string } };
 type VariableUpsertData = { variableCollectionUpsert?: boolean | null };
 type ServiceSourceQuery = {
   service: {
+    name?: string;
     serviceInstances: {
       edges: Array<{
         node: {
@@ -102,14 +103,20 @@ function normalizeServiceName(email: string) {
 async function resolveSource(
   sourceServiceId: string,
   environmentId: string,
-): Promise<{ image?: string; repo?: string } | null> {
+): Promise<{ image?: string; repo?: string; templateServiceName?: string } | null> {
   // Explicit override takes priority
   const envImage = process.env.RAILWAY_SOURCE_IMAGE;
-  if (envImage) return { image: envImage };
+  if (envImage) {
+    return {
+      image: envImage,
+      templateServiceName: "RAILWAY_SOURCE_IMAGE",
+    };
+  }
 
   const query = `
     query GetServiceSource($serviceId: String!) {
       service(id: $serviceId) {
+        name
         serviceInstances {
           edges {
             node {
@@ -130,7 +137,11 @@ async function resolveSource(
     const nodes = (data.service?.serviceInstances?.edges ?? []).map((e) => e.node);
     // Prefer the matching environment, fall back to first node
     const match = nodes.find((n) => n.environmentId === environmentId) ?? nodes[0];
-    return match?.source ?? null;
+    if (!match?.source) return null;
+    return {
+      ...match.source,
+      templateServiceName: data.service?.name,
+    };
   } catch (error) {
     throw new Error(
       `Failed to resolve source from template service ${sourceServiceId}: ${
@@ -204,6 +215,24 @@ async function createService(
     throw new Error(
       "Template service source could not be resolved. Set RAILWAY_SOURCE_IMAGE or use a template service with a valid source.",
     );
+  }
+
+  // Guardrail: prevent accidental cloning of the frontend/template service.
+  // Require either explicit source image or a name hint match for the template service.
+  const requiredHint = (process.env.RAILWAY_TEMPLATE_SERVICE_NAME_HINT || "").trim().toLowerCase();
+  const templateName = (src.templateServiceName || "").toLowerCase();
+  const usingExplicitImage = Boolean(process.env.RAILWAY_SOURCE_IMAGE);
+  if (!usingExplicitImage) {
+    if (!requiredHint) {
+      throw new Error(
+        "Owner mode safety check failed: set RAILWAY_TEMPLATE_SERVICE_NAME_HINT (example: worker/gateway) or set RAILWAY_SOURCE_IMAGE. This prevents cloning the wrong service type.",
+      );
+    }
+    if (!templateName.includes(requiredHint)) {
+      throw new Error(
+        `Owner mode safety check failed: template service '${src.templateServiceName || sourceServiceId}' does not match RAILWAY_TEMPLATE_SERVICE_NAME_HINT='${requiredHint}'.`,
+      );
+    }
   }
 
   const input: Record<string, unknown> = { projectId, name };

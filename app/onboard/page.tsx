@@ -295,7 +295,7 @@ export default function OnboardPage() {
           </div>
           <div className="section-divider my-4" />
           <p className="font-mono-tech text-xs text-cyan">railway mode</p>
-          <p className="mt-2 rounded-md bg-[#061024] p-3 font-mono-tech text-xs text-cyan">template deployment redirect</p>
+          <p className="mt-2 rounded-md bg-[#061024] p-3 font-mono-tech text-xs text-cyan">owner mode service clone</p>
         </aside>
       </div>
     </main>
