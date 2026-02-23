@@ -27,8 +27,7 @@ type CreateRailwayServiceResult = {
   consoleUrl: string;
 };
 
-type ServiceCreateDataA = { serviceCreate?: { id: string; name?: string } };
-type ServiceCreateDataB = { projectServiceCreate?: { id: string; name?: string } };
+type ServiceCreateData = { serviceCreate?: { id: string; name?: string } };
 type VariableUpsertData = { variableCollectionUpsert?: boolean | null };
 type DeploymentCreateData = { deploymentCreate?: { id: string; status?: string } };
 
@@ -85,7 +84,11 @@ function normalizeServiceName(email: string) {
   return `neuralclaw-${cleaned}-${suffix}`.slice(0, 58);
 }
 
-async function createService(projectId: string, sourceServiceId: string, name: string): Promise<{ id: string; name: string }> {
+async function createService(
+  projectId: string,
+  sourceServiceId: string,
+  name: string,
+): Promise<{ id: string; name: string }> {
   const mutationA = `
     mutation ServiceCreate($input: ServiceCreateInput!) {
       serviceCreate(input: $input) {
@@ -95,31 +98,7 @@ async function createService(projectId: string, sourceServiceId: string, name: s
     }
   `;
 
-  try {
-    const a = await railwayGql<ServiceCreateDataA>(mutationA, {
-      input: {
-        projectId,
-        name,
-        sourceServiceId,
-      },
-    });
-    if (a.serviceCreate?.id) {
-      return { id: a.serviceCreate.id, name: a.serviceCreate.name || name };
-    }
-  } catch {
-    // fall through to alternate mutation form
-  }
-
-  const mutationB = `
-    mutation ProjectServiceCreate($input: ProjectServiceCreateInput!) {
-      projectServiceCreate(input: $input) {
-        id
-        name
-      }
-    }
-  `;
-
-  const b = await railwayGql<ServiceCreateDataB>(mutationB, {
+  const created = await railwayGql<ServiceCreateData>(mutationA, {
     input: {
       projectId,
       name,
@@ -127,13 +106,13 @@ async function createService(projectId: string, sourceServiceId: string, name: s
     },
   });
 
-  if (!b.projectServiceCreate?.id) {
+  if (!created.serviceCreate?.id) {
     throw new Error("Railway service creation returned no service ID");
   }
 
   return {
-    id: b.projectServiceCreate.id,
-    name: b.projectServiceCreate.name || name,
+    id: created.serviceCreate.id,
+    name: created.serviceCreate.name || name,
   };
 }
 
