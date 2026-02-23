@@ -37,7 +37,9 @@ Run `supabase/schema.sql` in your Supabase SQL editor.
 
 1. Deploy this frontend on Railway.
 2. Fill env vars in `.env.example`.
-3. Set `RAILWAY_RUNTIME_TEMPLATE_REPO` to a small runtime template repo.
+3. Set runtime source:
+   - preferred: `RAILWAY_SOURCE_IMAGE` (stable one-click provisioning)
+   - fallback: `RAILWAY_RUNTIME_TEMPLATE_REPO` + `RAILWAY_RUNTIME_TEMPLATE_BRANCH`
 
 ## Recommended Runtime Template Repo (pip install flow)
 

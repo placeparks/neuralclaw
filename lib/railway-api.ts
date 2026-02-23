@@ -23,7 +23,7 @@ export type RailwayProvisionInput = {
   variables: Record<string, string>;
 };
 
-const RAILWAY_ENDPOINT = "https://backboard.railway.app/graphql/v2";
+const DEFAULT_RAILWAY_ENDPOINT = "https://backboard.railway.app/graphql/v2";
 
 function mustEnv(name: string): string {
   const value = process.env[name];
@@ -33,10 +33,21 @@ function mustEnv(name: string): string {
   return value;
 }
 
-async function graphql<T>(query: string, variables: Record<string, unknown>): Promise<T> {
-  const token = mustEnv("RAILWAY_API_TOKEN");
+function railwayToken(): string {
+  return process.env.RAILWAY_API_TOKEN || process.env.RAILWAY_TOKEN || "";
+}
 
-  const res = await fetch(RAILWAY_ENDPOINT, {
+function railwayEndpoint(): string {
+  return process.env.RAILWAY_GRAPHQL_ENDPOINT || DEFAULT_RAILWAY_ENDPOINT;
+}
+
+async function graphql<T>(query: string, variables: Record<string, unknown>): Promise<T> {
+  const token = railwayToken();
+  if (!token) {
+    throw new Error("Missing required env var: RAILWAY_API_TOKEN (or RAILWAY_TOKEN)");
+  }
+
+  const res = await fetch(railwayEndpoint(), {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -46,7 +57,9 @@ async function graphql<T>(query: string, variables: Record<string, unknown>): Pr
   });
 
   if (!res.ok) {
-    throw new Error(`Railway API error: HTTP ${res.status}`);
+    const body = await res.text().catch(() => "");
+    const detail = body ? ` | ${body.slice(0, 800)}` : "";
+    throw new Error(`Railway API error: HTTP ${res.status}${detail}`);
   }
 
   const json = (await res.json()) as GraphQLResponse<T>;
@@ -63,17 +76,43 @@ async function graphql<T>(query: string, variables: Record<string, unknown>): Pr
 
 async function createService(serviceName: string): Promise<string> {
   const projectId = mustEnv("RAILWAY_PROJECT_ID");
+  const sourceImage = process.env.RAILWAY_SOURCE_IMAGE;
   const repo = process.env.RAILWAY_RUNTIME_TEMPLATE_REPO || process.env.RAILWAY_TEMPLATE_REPO;
   const branch = process.env.RAILWAY_RUNTIME_TEMPLATE_BRANCH || process.env.RAILWAY_TEMPLATE_BRANCH || "main";
 
-  if (!repo) {
-    throw new Error("Missing required env var: RAILWAY_RUNTIME_TEMPLATE_REPO (or legacy RAILWAY_TEMPLATE_REPO)");
+  if (!sourceImage && !repo) {
+    throw new Error(
+      "Missing runtime source. Set RAILWAY_SOURCE_IMAGE or RAILWAY_RUNTIME_TEMPLATE_REPO (legacy: RAILWAY_TEMPLATE_REPO)."
+    );
   }
 
-  const candidates = [
+  const candidates: Array<{
+    enabled: boolean;
+    query: string;
+    vars: Record<string, unknown>;
+    pick: (data: CreateServiceData) => string | undefined;
+  }> = [
     {
+      enabled: Boolean(sourceImage),
       query: `
-        mutation CreateService($projectId: String!, $name: String!, $repo: String!, $branch: String) {
+        mutation CreateServiceImage($projectId: String!, $name: String!, $image: String!) {
+          serviceCreate(input: {
+            projectId: $projectId,
+            name: $name,
+            source: { image: $image }
+          }) {
+            id
+            name
+          }
+        }
+      `,
+      vars: { projectId, name: serviceName, image: sourceImage || "" },
+      pick: (data: CreateServiceData) => data.serviceCreate?.id
+    },
+    {
+      enabled: Boolean(repo),
+      query: `
+        mutation CreateServiceRepoSource($projectId: String!, $name: String!, $repo: String!, $branch: String) {
           serviceCreate(input: {
             projectId: $projectId,
             name: $name,
@@ -84,11 +123,13 @@ async function createService(serviceName: string): Promise<string> {
           }
         }
       `,
+      vars: { projectId, name: serviceName, repo: repo || "", branch },
       pick: (data: CreateServiceData) => data.serviceCreate?.id
     },
     {
+      enabled: Boolean(repo),
       query: `
-        mutation CreateServiceRepo($projectId: String!, $name: String!, $repo: String!, $branch: String) {
+        mutation CreateServiceFromRepo($projectId: String!, $name: String!, $repo: String!, $branch: String) {
           serviceCreateFromRepo(input: {
             projectId: $projectId,
             name: $name,
@@ -100,20 +141,16 @@ async function createService(serviceName: string): Promise<string> {
           }
         }
       `,
+      vars: { projectId, name: serviceName, repo: repo || "", branch },
       pick: (data: CreateServiceData) => data.serviceCreateFromRepo?.id
     }
   ];
 
   let lastErr = "Unknown create service error";
 
-  for (const candidate of candidates) {
+  for (const candidate of candidates.filter((c) => c.enabled)) {
     try {
-      const data = await graphql<CreateServiceData>(candidate.query, {
-        projectId,
-        name: serviceName,
-        repo,
-        branch
-      });
+      const data = await graphql<CreateServiceData>(candidate.query, candidate.vars);
       const id = candidate.pick(data);
       if (id) {
         return id;
@@ -132,43 +169,57 @@ async function upsertVariables(serviceId: string, vars: Record<string, string>):
 
   const variables = Object.entries(vars).map(([name, value]) => ({ name, value }));
 
-  const candidates = [
-    `
-      mutation UpsertVars($projectId: String!, $environmentId: String!, $serviceId: String!, $variables: [VariableInput!]!) {
-        variableCollectionUpsert(input: {
-          projectId: $projectId,
-          environmentId: $environmentId,
-          serviceId: $serviceId,
-          variables: $variables
-        }) {
-          updated
+  const candidates: Array<{ query: string; vars: Record<string, unknown> }> = [
+    {
+      query: `
+        mutation UpsertVarsMap($projectId: String!, $environmentId: String!, $serviceId: String!, $variables: EnvironmentVariables!) {
+          variableCollectionUpsert(input: {
+            projectId: $projectId,
+            environmentId: $environmentId,
+            serviceId: $serviceId,
+            variables: $variables
+          })
         }
-      }
-    `,
-    `
-      mutation UpsertVarsAlt($projectId: String!, $environmentId: String!, $serviceId: String!, $variables: [VariableInput!]!) {
-        variablesUpsert(input: {
-          projectId: $projectId,
-          environmentId: $environmentId,
-          serviceId: $serviceId,
-          variables: $variables
-        }) {
-          updated
+      `,
+      vars: { projectId, environmentId, serviceId, variables: vars }
+    },
+    {
+      query: `
+        mutation UpsertVarsList($projectId: String!, $environmentId: String!, $serviceId: String!, $variables: [VariableInput!]!) {
+          variableCollectionUpsert(input: {
+            projectId: $projectId,
+            environmentId: $environmentId,
+            serviceId: $serviceId,
+            variables: $variables
+          }) {
+            updated
+          }
         }
-      }
-    `
+      `,
+      vars: { projectId, environmentId, serviceId, variables }
+    },
+    {
+      query: `
+        mutation UpsertVarsAlt($projectId: String!, $environmentId: String!, $serviceId: String!, $variables: [VariableInput!]!) {
+          variablesUpsert(input: {
+            projectId: $projectId,
+            environmentId: $environmentId,
+            serviceId: $serviceId,
+            variables: $variables
+          }) {
+            updated
+          }
+        }
+      `,
+      vars: { projectId, environmentId, serviceId, variables }
+    }
   ];
 
   let lastErr = "Unknown variable upsert error";
 
-  for (const query of candidates) {
+  for (const candidate of candidates) {
     try {
-      await graphql<UpsertVarsData>(query, {
-        projectId,
-        environmentId,
-        serviceId,
-        variables
-      });
+      await graphql<UpsertVarsData>(candidate.query, candidate.vars);
       return;
     } catch (err) {
       lastErr = err instanceof Error ? err.message : String(err);
@@ -182,6 +233,14 @@ async function triggerDeployment(serviceId: string): Promise<string | null> {
   const environmentId = mustEnv("RAILWAY_ENVIRONMENT_ID");
 
   const candidates = [
+    {
+      query: `
+        mutation DeployServiceV2($environmentId: String!, $serviceId: String!) {
+          serviceInstanceDeployV2(environmentId: $environmentId, serviceId: $serviceId)
+        }
+      `,
+      pick: () => null
+    },
     {
       query: `
         mutation DeployService($environmentId: String!, $serviceId: String!) {

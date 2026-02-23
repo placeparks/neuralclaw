@@ -1,5 +1,4 @@
 import { NextResponse } from "next/server";
-import { runProvision } from "@/lib/provisioner";
 import { getSupabaseAdmin } from "@/lib/supabase-admin";
 import { encryptToken } from "@/lib/token-crypto";
 import type { DeploymentRequest } from "@/lib/types";
@@ -54,25 +53,10 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: channelErr.message }, { status: 500 });
     }
 
-    let autoProvisionTriggered = true;
-    let autoProvisionError = "";
-
-    try {
-      await runProvision(1);
-    } catch (e) {
-      autoProvisionTriggered = false;
-      autoProvisionError = e instanceof Error ? e.message : String(e);
-      console.error("[deploy] auto-provision trigger failed", autoProvisionError);
-    }
-
     return NextResponse.json({
       ok: true,
       deploymentId: deployment.id,
-      message: autoProvisionTriggered
-        ? "Deployment queued and provisioning triggered"
-        : "Deployment queued but auto-provision trigger failed; call /api/provision/run",
-      autoProvisionTriggered,
-      autoProvisionError: autoProvisionError || undefined
+      message: "Deployment request queued"
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unexpected server error";
