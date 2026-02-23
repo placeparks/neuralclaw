@@ -190,26 +190,33 @@ async function createService(
   };
 }
 
-function buildServiceVariables(input: CreateRailwayServiceInput): Record<string, string> {
-  // Infrastructure vars the Next.js app needs to boot (shared across all instances)
-  const infra: Record<string, string> = {};
-  if (process.env.DATABASE_URL) infra.DATABASE_URL = process.env.DATABASE_URL;
-  if (process.env.DIRECT_URL) infra.DIRECT_URL = process.env.DIRECT_URL;
-  if (process.env.AUTH_SESSION_SECRET) infra.AUTH_SESSION_SECRET = process.env.AUTH_SESSION_SECRET;
+// Maps the provider name to the env var name neuralclaw reads from the environment
+const PROVIDER_KEY_ENV: Record<string, string> = {
+  openai: "OPENAI_API_KEY",
+  anthropic: "ANTHROPIC_API_KEY",
+  openrouter: "OPENROUTER_API_KEY",
+};
 
+function buildServiceVariables(input: CreateRailwayServiceInput): Record<string, string> {
+  // Identity vars so the gateway knows which user/plan/provider it serves
   const variables: Record<string, string> = {
-    ...infra,
     NEURALCLUB_USER_EMAIL: input.userEmail,
     NEURALCLUB_PLAN: input.plan,
     NEURALCLUB_PROVIDER: input.provider,
     NEURALCLUB_CHANNELS: input.channels.join(","),
   };
 
-  if (input.providerApiKey) variables.NEURALCLAW_PROVIDER_API_KEY = input.providerApiKey;
-  if (input.channelSecrets?.telegramBotToken) variables.NEURALCLAW_TELEGRAM_TOKEN = input.channelSecrets.telegramBotToken;
-  if (input.channelSecrets?.discordBotToken) variables.NEURALCLAW_DISCORD_TOKEN = input.channelSecrets.discordBotToken;
-  if (input.channelSecrets?.slackBotToken) variables.NEURALCLAW_SLACK_BOT_TOKEN = input.channelSecrets.slackBotToken;
-  if (input.channelSecrets?.slackAppToken) variables.NEURALCLAW_SLACK_APP_TOKEN = input.channelSecrets.slackAppToken;
+  // Provider API key — set under the name neuralclaw reads (e.g. OPENAI_API_KEY)
+  if (input.providerApiKey) {
+    const envName = PROVIDER_KEY_ENV[input.provider.toLowerCase()] ?? "NEURALCLAW_PROVIDER_API_KEY";
+    variables[envName] = input.providerApiKey;
+  }
+
+  // Channel credentials
+  if (input.channelSecrets?.telegramBotToken) variables.TELEGRAM_BOT_TOKEN = input.channelSecrets.telegramBotToken;
+  if (input.channelSecrets?.discordBotToken) variables.DISCORD_BOT_TOKEN = input.channelSecrets.discordBotToken;
+  if (input.channelSecrets?.slackBotToken) variables.SLACK_BOT_TOKEN = input.channelSecrets.slackBotToken;
+  if (input.channelSecrets?.slackAppToken) variables.SLACK_APP_TOKEN = input.channelSecrets.slackAppToken;
   if (input.channelSecrets?.whatsappSession) variables.NEURALCLAW_WHATSAPP_SESSION = input.channelSecrets.whatsappSession;
   if (input.channelSecrets?.signalPhone) variables.NEURALCLAW_SIGNAL_PHONE = input.channelSecrets.signalPhone;
 
