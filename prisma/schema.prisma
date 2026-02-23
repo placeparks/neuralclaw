@@ -1,0 +1,66 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+model User {
+  id           String       @id @default(cuid())
+  email        String       @unique
+  passwordHash String
+  createdAt    DateTime     @default(now())
+  updatedAt    DateTime     @updatedAt
+
+  deployments  Deployment[]
+
+  @@map("users")
+}
+
+model Deployment {
+  id               String            @id @default(cuid())
+  userId           String
+  user             User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  plan             String
+  provider         Provider
+  channels         Channel[]
+  status           DeploymentStatus  @default(PENDING)
+
+  deployUrl        String?
+  railwayProjectId String?
+  instanceUrl      String?
+  notes            String?
+
+  createdAt        DateTime          @default(now())
+  updatedAt        DateTime          @updatedAt
+
+  @@index([userId, createdAt])
+  @@map("deployments")
+}
+
+enum Provider {
+  OPENAI
+  ANTHROPIC
+  OPENROUTER
+  LOCAL
+}
+
+enum Channel {
+  TELEGRAM
+  DISCORD
+  SLACK
+  WHATSAPP
+  SIGNAL
+}
+
+enum DeploymentStatus {
+  PENDING
+  REDIRECTED
+  DEPLOYING
+  RUNNING
+  FAILED
+}
