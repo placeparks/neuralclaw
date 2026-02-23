@@ -57,11 +57,23 @@ async function railwayGql<T>(query: string, variables: Record<string, unknown>) 
     cache: "no-store",
   });
 
-  if (!res.ok) {
-    throw new Error(`Railway API request failed (${res.status})`);
+  const raw = await res.text();
+  let json: RailwayGraphQLResponse<T> | null = null;
+  try {
+    json = JSON.parse(raw) as RailwayGraphQLResponse<T>;
+  } catch {
+    json = null;
   }
 
-  const json = (await res.json()) as RailwayGraphQLResponse<T>;
+  if (!res.ok) {
+    const detail = json?.errors?.map((e) => e.message).join("; ") || raw || "No response body";
+    throw new Error(`Railway API request failed (${res.status}): ${detail}`);
+  }
+
+  if (!json) {
+    throw new Error("Railway API returned non-JSON response");
+  }
+
   if (json.errors?.length) {
     throw new Error(json.errors.map((e) => e.message).join("; "));
   }
@@ -116,10 +128,20 @@ export async function createRailwayInstanceForUser(
   }
 
   const variableMutation = `
-    mutation UpsertVars($input: VariableCollectionUpsertInput!) {
-      variableCollectionUpsert(input: $input) {
-        id
-      }
+    mutation VariableCollectionUpsert(
+      $projectId: String!,
+      $serviceId: String!,
+      $environmentId: String!,
+      $variables: EnvironmentVariables!
+    ) {
+      variableCollectionUpsert(
+        input: {
+          projectId: $projectId,
+          environmentId: $environmentId,
+          serviceId: $serviceId,
+          variables: $variables
+        }
+      )
     }
   `;
 
@@ -153,13 +175,10 @@ export async function createRailwayInstanceForUser(
   }
 
   await railwayGql<RailwayVariableUpsertData>(variableMutation, {
-    input: {
-      projectId,
-      environmentId,
-      serviceId,
-      replace: false,
-      variables,
-    },
+    projectId,
+    environmentId,
+    serviceId,
+    variables,
   });
 
   const deploymentMutation = `
