@@ -127,8 +127,12 @@ async function resolveSource(
     // Prefer the matching environment, fall back to first node
     const match = nodes.find((n) => n.environmentId === environmentId) ?? nodes[0];
     return match?.source ?? null;
-  } catch {
-    return null;
+  } catch (error) {
+    throw new Error(
+      `Failed to resolve source from template service ${sourceServiceId}: ${
+        error instanceof Error ? error.message : "unknown error"
+      }`,
+    );
   }
 }
 
@@ -137,19 +141,43 @@ async function resolveSource(
  * Non-fatal — the service may already auto-build when a source is attached.
  */
 async function triggerDeploy(serviceId: string, environmentId: string): Promise<void> {
-  const mutation = `
-    mutation ServiceInstanceRedeploy($serviceId: String!, $environmentId: String!) {
-      serviceInstanceRedeploy(serviceId: $serviceId, environmentId: $environmentId)
+  const attempts = [
+    {
+      query: `
+        mutation ServiceInstanceDeployV2($serviceId: String!, $environmentId: String!) {
+          serviceInstanceDeployV2(serviceId: $serviceId, environmentId: $environmentId)
+        }
+      `,
+      vars: { serviceId, environmentId },
+    },
+    {
+      query: `
+        mutation ServiceInstanceRedeploy($serviceId: String!, $environmentId: String!) {
+          serviceInstanceRedeploy(serviceId: $serviceId, environmentId: $environmentId)
+        }
+      `,
+      vars: { serviceId, environmentId },
+    },
+    {
+      query: `
+        mutation ServiceInstanceDeploy($serviceId: String!, $environmentId: String!) {
+          serviceInstanceDeploy(serviceId: $serviceId, environmentId: $environmentId)
+        }
+      `,
+      vars: { serviceId, environmentId },
+    },
+  ];
+
+  let lastError = "";
+  for (const attempt of attempts) {
+    try {
+      await railwayGql<Record<string, unknown>>(attempt.query, attempt.vars);
+      return;
+    } catch (error) {
+      lastError = error instanceof Error ? error.message : "unknown deploy trigger error";
     }
-  `;
-  try {
-    await railwayGql<{ serviceInstanceRedeploy?: boolean }>(mutation, {
-      serviceId,
-      environmentId,
-    });
-  } catch {
-    // Non-fatal: service should auto-deploy when a source is attached
   }
+  throw new Error(`Failed to trigger first deployment: ${lastError}`);
 }
 
 async function createService(
@@ -168,6 +196,11 @@ async function createService(
   `;
 
   const src = await resolveSource(sourceServiceId, environmentId);
+  if (!src?.image && !src?.repo) {
+    throw new Error(
+      "Template service source could not be resolved. Set RAILWAY_SOURCE_IMAGE or use a template service with a valid source.",
+    );
+  }
 
   const input: Record<string, unknown> = { projectId, name };
   if (src?.image) {
@@ -175,10 +208,6 @@ async function createService(
   } else if (src?.repo) {
     input.source = { repo: src.repo };
   }
-  // If source cannot be resolved, the service is created empty.
-  // It will need to be connected to a source manually in the Railway dashboard,
-  // or set RAILWAY_SOURCE_IMAGE in your environment.
-
   const created = await railwayGql<ServiceCreateData>(mutation, { input });
   if (!created.serviceCreate?.id) {
     throw new Error("serviceCreate returned no id");
@@ -188,6 +217,31 @@ async function createService(
     id: created.serviceCreate.id,
     name: created.serviceCreate.name || name,
   };
+}
+
+async function updateServiceInstance(
+  serviceId: string,
+  environmentId: string,
+): Promise<void> {
+  const startCommand = process.env.RAILWAY_AGENT_START_COMMAND || "python -m neuralclaw.cli gateway";
+  const mutation = `
+    mutation ServiceInstanceUpdate($serviceId: String!, $environmentId: String!, $input: ServiceInstanceUpdateInput!) {
+      serviceInstanceUpdate(serviceId: $serviceId, environmentId: $environmentId, input: $input)
+    }
+  `;
+  try {
+    await railwayGql<{ serviceInstanceUpdate?: boolean }>(mutation, {
+      serviceId,
+      environmentId,
+      input: {
+        startCommand,
+        restartPolicyType: "ON_FAILURE",
+        restartPolicyMaxRetries: 10,
+      },
+    });
+  } catch {
+    // Non-fatal: keep default service settings if mutation isn't available.
+  }
 }
 
 // Maps the provider name to the env var name neuralclaw reads from the environment
@@ -213,10 +267,10 @@ function buildServiceVariables(input: CreateRailwayServiceInput): Record<string,
   }
 
   // Channel credentials
-  if (input.channelSecrets?.telegramBotToken) variables.TELEGRAM_BOT_TOKEN = input.channelSecrets.telegramBotToken;
-  if (input.channelSecrets?.discordBotToken) variables.DISCORD_BOT_TOKEN = input.channelSecrets.discordBotToken;
-  if (input.channelSecrets?.slackBotToken) variables.SLACK_BOT_TOKEN = input.channelSecrets.slackBotToken;
-  if (input.channelSecrets?.slackAppToken) variables.SLACK_APP_TOKEN = input.channelSecrets.slackAppToken;
+  if (input.channelSecrets?.telegramBotToken) variables.NEURALCLAW_TELEGRAM_TOKEN = input.channelSecrets.telegramBotToken;
+  if (input.channelSecrets?.discordBotToken) variables.NEURALCLAW_DISCORD_TOKEN = input.channelSecrets.discordBotToken;
+  if (input.channelSecrets?.slackBotToken) variables.NEURALCLAW_SLACK_BOT_TOKEN = input.channelSecrets.slackBotToken;
+  if (input.channelSecrets?.slackAppToken) variables.NEURALCLAW_SLACK_APP_TOKEN = input.channelSecrets.slackAppToken;
   if (input.channelSecrets?.whatsappSession) variables.NEURALCLAW_WHATSAPP_SESSION = input.channelSecrets.whatsappSession;
   if (input.channelSecrets?.signalPhone) variables.NEURALCLAW_SIGNAL_PHONE = input.channelSecrets.signalPhone;
 
@@ -271,6 +325,8 @@ export async function createRailwayServiceForUser(
       }`,
     );
   }
+
+  await updateServiceInstance(createdService.id, environmentId);
 
   // Trigger deployment after variables are set so the service starts with correct env
   await triggerDeploy(createdService.id, environmentId);
