@@ -1,33 +1,8 @@
 import { NextResponse } from "next/server";
 import { getSupabaseAdmin } from "@/lib/supabase-admin";
 import { encryptToken } from "@/lib/token-crypto";
+import { runProvision } from "@/lib/provisioner";
 import type { DeploymentRequest } from "@/lib/types";
-
-async function triggerProvisioner(origin: string): Promise<string | null> {
-  try {
-    const secret = process.env.PROVISIONER_SECRET;
-    const headers: Record<string, string> = { "Content-Type": "application/json" };
-    if (secret) {
-      headers["x-provisioner-secret"] = secret;
-    }
-
-    const res = await fetch(`${origin}/api/provision/run`, {
-      method: "POST",
-      headers,
-      body: JSON.stringify({ limit: 1 })
-    });
-
-    if (!res.ok) {
-      const detail = await res.text().catch(() => "");
-      return `auto-provision trigger failed: HTTP ${res.status}${detail ? ` ${detail}` : ""}`;
-    }
-
-    return null;
-  } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
-    return `auto-provision trigger failed: ${message}`;
-  }
-}
 
 export async function POST(req: Request) {
   try {
@@ -79,8 +54,13 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: channelErr.message }, { status: 500 });
     }
 
-    const origin = new URL(req.url).origin;
-    const triggerWarning = await triggerProvisioner(origin);
+    let triggerWarning: string | null = null;
+    try {
+      await runProvision(1);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      triggerWarning = `auto-provision trigger failed: ${message}`;
+    }
 
     return NextResponse.json({
       ok: true,
