@@ -32,6 +32,8 @@ model Deployment {
 
   deployUrl        String?
   railwayProjectId String?
+  railwayServiceId String?
+  railwayEnvId     String?
   instanceUrl      String?
   notes            String?
 

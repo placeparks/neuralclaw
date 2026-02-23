@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getSessionCookieName, verifySessionToken } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { Channel, Provider } from "@prisma/client";
-import { createRailwayInstanceForUser } from "@/lib/railway";
+import { createRailwayServiceForUser } from "@/lib/railway";
 
 function buildRailwayDeployUrl() {
   const direct = process.env.RAILWAY_DEPLOY_URL;
@@ -85,7 +85,7 @@ export async function POST(request: NextRequest) {
   // TODO: enable Stripe Checkout before production billing.
   if (ownerMode) {
     try {
-      const created = await createRailwayInstanceForUser({
+      const created = await createRailwayServiceForUser({
         userEmail: user.email,
         plan: String(payload.plan),
         provider: String(payload.provider),
@@ -103,14 +103,16 @@ export async function POST(request: NextRequest) {
           status: "DEPLOYING",
           deployUrl: created.consoleUrl,
           railwayProjectId: created.projectId,
-          notes: `Created Railway environment ${created.environmentId} on your project.`,
+          railwayServiceId: created.serviceId,
+          railwayEnvId: created.environmentId,
+          notes: `Created Railway service ${created.serviceName} (${created.serviceId}) in your project.`,
         },
       });
 
       return NextResponse.json({
         deploymentId: deployment.id,
         status: "DEPLOYING",
-        detail: "New Railway instance created in owner project.",
+        detail: "New Railway service instance created in owner project.",
         deployUrl: created.consoleUrl,
       });
     } catch (error) {

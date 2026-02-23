@@ -7,7 +7,7 @@ Standalone Next.js frontend for NeuralClub one-click deployment.
 - Animated blue/cyan NeuralClub UI (`/`, `/pricing`, `/login`, `/register`, `/onboard`, `/dashboard`)
 - Working auth with cookie sessions + Prisma user table
 - DB-backed deployment records per user
-- Railway owner-mode deploy: each user deploy creates a new environment instance in your Railway project
+- Railway owner-mode deploy: each user deploy creates a new service instance in your Railway project
 - Stripe intentionally disabled for testing
 
 ## Environment variables
@@ -52,5 +52,5 @@ npm run dev
 
 - Register/login writes users to Postgres via Prisma.
 - Deploy action creates a deployment row tied to the logged-in user.
-- In owner mode, backend creates a new Railway environment (instance) inside your project and triggers deployment.
+- In owner mode, backend clones a new Railway service from your template service, applies user-specific vars, and triggers deployment.
 - Dashboard shows user-specific deployment history and Railway console link.

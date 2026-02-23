@@ -3,19 +3,7 @@ type RailwayGraphQLResponse<T> = {
   errors?: Array<{ message: string }>;
 };
 
-type RailwayEnvironmentCreateData = {
-  environmentCreate?: { id: string; name: string };
-};
-
-type RailwayVariableUpsertData = {
-  variableCollectionUpsert?: { id?: string } | null;
-};
-
-type RailwayDeploymentCreateData = {
-  deploymentCreate?: { id: string; status?: string };
-};
-
-type CreateRailwayInstanceInput = {
+type CreateRailwayServiceInput = {
   userEmail: string;
   plan: string;
   provider: string;
@@ -31,12 +19,18 @@ type CreateRailwayInstanceInput = {
   };
 };
 
-type CreateRailwayInstanceResult = {
-  environmentId: string;
+type CreateRailwayServiceResult = {
   projectId: string;
   serviceId: string;
+  environmentId: string;
+  serviceName: string;
   consoleUrl: string;
 };
+
+type ServiceCreateDataA = { serviceCreate?: { id: string; name?: string } };
+type ServiceCreateDataB = { projectServiceCreate?: { id: string; name?: string } };
+type VariableUpsertData = { variableCollectionUpsert?: boolean | null };
+type DeploymentCreateData = { deploymentCreate?: { id: string; status?: string } };
 
 const DEFAULT_ENDPOINT = "https://backboard.railway.com/graphql/v2";
 
@@ -80,52 +74,103 @@ async function railwayGql<T>(query: string, variables: Record<string, unknown>) 
   if (!json.data) {
     throw new Error("Railway API returned no data");
   }
+
   return json.data;
 }
 
-function normalizeEnvName(email: string) {
+function normalizeServiceName(email: string) {
   const base = email.split("@")[0] || "user";
   const cleaned = base.toLowerCase().replace(/[^a-z0-9-]/g, "-").replace(/-+/g, "-");
   const suffix = Date.now().toString(36);
-  return `nc-${cleaned}-${suffix}`.slice(0, 48);
+  return `neuralclaw-${cleaned}-${suffix}`.slice(0, 58);
 }
 
-export async function createRailwayInstanceForUser(
-  input: CreateRailwayInstanceInput,
-): Promise<CreateRailwayInstanceResult> {
-  const projectId = process.env.RAILWAY_PROJECT_ID;
-  const serviceId = process.env.RAILWAY_SERVICE_ID;
-  const sourceEnvironmentId = process.env.RAILWAY_BASE_ENVIRONMENT_ID;
-
-  if (!projectId || !serviceId || !sourceEnvironmentId) {
-    throw new Error(
-      "Missing Railway owner env vars: RAILWAY_PROJECT_ID, RAILWAY_SERVICE_ID, RAILWAY_BASE_ENVIRONMENT_ID",
-    );
-  }
-
-  const envName = normalizeEnvName(input.userEmail);
-
-  const createEnvironmentMutation = `
-    mutation CreateEnvironment($input: EnvironmentCreateInput!) {
-      environmentCreate(input: $input) {
+async function createService(projectId: string, sourceServiceId: string, name: string): Promise<{ id: string; name: string }> {
+  const mutationA = `
+    mutation ServiceCreate($input: ServiceCreateInput!) {
+      serviceCreate(input: $input) {
         id
         name
       }
     }
   `;
 
-  const created = await railwayGql<RailwayEnvironmentCreateData>(createEnvironmentMutation, {
+  try {
+    const a = await railwayGql<ServiceCreateDataA>(mutationA, {
+      input: {
+        projectId,
+        name,
+        sourceServiceId,
+      },
+    });
+    if (a.serviceCreate?.id) {
+      return { id: a.serviceCreate.id, name: a.serviceCreate.name || name };
+    }
+  } catch {
+    // fall through to alternate mutation form
+  }
+
+  const mutationB = `
+    mutation ProjectServiceCreate($input: ProjectServiceCreateInput!) {
+      projectServiceCreate(input: $input) {
+        id
+        name
+      }
+    }
+  `;
+
+  const b = await railwayGql<ServiceCreateDataB>(mutationB, {
     input: {
       projectId,
-      name: envName,
-      sourceEnvironmentId,
+      name,
+      sourceServiceId,
     },
   });
 
-  const environmentId = created.environmentCreate?.id;
-  if (!environmentId) {
-    throw new Error("Railway environment creation failed");
+  if (!b.projectServiceCreate?.id) {
+    throw new Error("Railway service creation returned no service ID");
   }
+
+  return {
+    id: b.projectServiceCreate.id,
+    name: b.projectServiceCreate.name || name,
+  };
+}
+
+function buildServiceVariables(input: CreateRailwayServiceInput): Record<string, string> {
+  const variables: Record<string, string> = {
+    NEURALCLUB_USER_EMAIL: input.userEmail,
+    NEURALCLUB_PLAN: input.plan,
+    NEURALCLUB_PROVIDER: input.provider,
+    NEURALCLUB_CHANNELS: input.channels.join(","),
+  };
+
+  if (input.providerApiKey) variables.NEURALCLAW_PROVIDER_API_KEY = input.providerApiKey;
+  if (input.channelSecrets?.telegramBotToken) variables.NEURALCLAW_TELEGRAM_TOKEN = input.channelSecrets.telegramBotToken;
+  if (input.channelSecrets?.discordBotToken) variables.NEURALCLAW_DISCORD_TOKEN = input.channelSecrets.discordBotToken;
+  if (input.channelSecrets?.slackBotToken) variables.NEURALCLAW_SLACK_BOT_TOKEN = input.channelSecrets.slackBotToken;
+  if (input.channelSecrets?.slackAppToken) variables.NEURALCLAW_SLACK_APP_TOKEN = input.channelSecrets.slackAppToken;
+  if (input.channelSecrets?.whatsappSession) variables.NEURALCLAW_WHATSAPP_SESSION = input.channelSecrets.whatsappSession;
+  if (input.channelSecrets?.signalPhone) variables.NEURALCLAW_SIGNAL_PHONE = input.channelSecrets.signalPhone;
+
+  return variables;
+}
+
+export async function createRailwayServiceForUser(
+  input: CreateRailwayServiceInput,
+): Promise<CreateRailwayServiceResult> {
+  const projectId = process.env.RAILWAY_PROJECT_ID;
+  const sourceServiceId = process.env.RAILWAY_SERVICE_ID;
+  const environmentId = process.env.RAILWAY_BASE_ENVIRONMENT_ID;
+
+  if (!projectId || !sourceServiceId || !environmentId) {
+    throw new Error(
+      "Missing owner env vars: RAILWAY_PROJECT_ID, RAILWAY_SERVICE_ID (template service), RAILWAY_BASE_ENVIRONMENT_ID",
+    );
+  }
+
+  const serviceName = normalizeServiceName(input.userEmail);
+  const createdService = await createService(projectId, sourceServiceId, serviceName);
 
   const variableMutation = `
     mutation VariableCollectionUpsert(
@@ -145,40 +190,11 @@ export async function createRailwayInstanceForUser(
     }
   `;
 
-  const variables: Record<string, string> = {
-    NEURALCLUB_USER_EMAIL: input.userEmail,
-    NEURALCLUB_PLAN: input.plan,
-    NEURALCLUB_PROVIDER: input.provider,
-    NEURALCLUB_CHANNELS: input.channels.join(","),
-  };
-
-  if (input.providerApiKey) {
-    variables.NEURALCLAW_PROVIDER_API_KEY = input.providerApiKey;
-  }
-  if (input.channelSecrets?.telegramBotToken) {
-    variables.NEURALCLAW_TELEGRAM_TOKEN = input.channelSecrets.telegramBotToken;
-  }
-  if (input.channelSecrets?.discordBotToken) {
-    variables.NEURALCLAW_DISCORD_TOKEN = input.channelSecrets.discordBotToken;
-  }
-  if (input.channelSecrets?.slackBotToken) {
-    variables.NEURALCLAW_SLACK_BOT_TOKEN = input.channelSecrets.slackBotToken;
-  }
-  if (input.channelSecrets?.slackAppToken) {
-    variables.NEURALCLAW_SLACK_APP_TOKEN = input.channelSecrets.slackAppToken;
-  }
-  if (input.channelSecrets?.whatsappSession) {
-    variables.NEURALCLAW_WHATSAPP_SESSION = input.channelSecrets.whatsappSession;
-  }
-  if (input.channelSecrets?.signalPhone) {
-    variables.NEURALCLAW_SIGNAL_PHONE = input.channelSecrets.signalPhone;
-  }
-
-  await railwayGql<RailwayVariableUpsertData>(variableMutation, {
+  await railwayGql<VariableUpsertData>(variableMutation, {
     projectId,
+    serviceId: createdService.id,
     environmentId,
-    serviceId,
-    variables,
+    variables: buildServiceVariables(input),
   });
 
   const deploymentMutation = `
@@ -191,17 +207,22 @@ export async function createRailwayInstanceForUser(
   `;
 
   try {
-    await railwayGql<RailwayDeploymentCreateData>(deploymentMutation, {
-      input: { projectId, environmentId, serviceId },
+    await railwayGql<DeploymentCreateData>(deploymentMutation, {
+      input: {
+        projectId,
+        environmentId,
+        serviceId: createdService.id,
+      },
     });
   } catch {
-    // Environment creation already produces an instance; deploy trigger can vary by API version.
+    // Some Railway setups auto-deploy on service creation.
   }
 
   return {
-    environmentId,
     projectId,
-    serviceId,
-    consoleUrl: `https://railway.com/project/${projectId}?environmentId=${environmentId}`,
+    serviceId: createdService.id,
+    environmentId,
+    serviceName: createdService.name,
+    consoleUrl: `https://railway.com/project/${projectId}/service/${createdService.id}?environmentId=${environmentId}`,
   };
 }
