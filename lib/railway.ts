@@ -98,22 +98,29 @@ async function createService(
     }
   `;
 
-  const created = await railwayGql<ServiceCreateData>(mutationA, {
-    input: {
-      projectId,
-      name,
-      sourceServiceId,
-    },
-  });
+  const attempts: Array<Record<string, unknown>> = [
+    { projectId, name, sourceServiceId },
+    { projectId, name, templateServiceId: sourceServiceId },
+    { projectId, name },
+  ];
 
-  if (!created.serviceCreate?.id) {
-    throw new Error("Railway service creation returned no service ID");
+  let lastError: string | null = null;
+  for (const input of attempts) {
+    try {
+      const created = await railwayGql<ServiceCreateData>(mutationA, { input });
+      if (created.serviceCreate?.id) {
+        return {
+          id: created.serviceCreate.id,
+          name: created.serviceCreate.name || name,
+        };
+      }
+      lastError = "serviceCreate returned no id";
+    } catch (error) {
+      lastError = error instanceof Error ? error.message : "unknown serviceCreate error";
+    }
   }
 
-  return {
-    id: created.serviceCreate.id,
-    name: created.serviceCreate.name || name,
-  };
+  throw new Error(`serviceCreate failed for all input variants. Last error: ${lastError || "none"}`);
 }
 
 function buildServiceVariables(input: CreateRailwayServiceInput): Record<string, string> {
@@ -169,12 +176,20 @@ export async function createRailwayServiceForUser(
     }
   `;
 
-  await railwayGql<VariableUpsertData>(variableMutation, {
-    projectId,
-    serviceId: createdService.id,
-    environmentId,
-    variables: buildServiceVariables(input),
-  });
+  try {
+    await railwayGql<VariableUpsertData>(variableMutation, {
+      projectId,
+      serviceId: createdService.id,
+      environmentId,
+      variables: buildServiceVariables(input),
+    });
+  } catch (error) {
+    throw new Error(
+      `variableCollectionUpsert failed for service ${createdService.id}: ${
+        error instanceof Error ? error.message : "unknown error"
+      }`,
+    );
+  }
 
   const deploymentMutation = `
     mutation TriggerDeploy($input: DeploymentCreateInput!) {
@@ -185,16 +200,28 @@ export async function createRailwayServiceForUser(
     }
   `;
 
-  try {
-    await railwayGql<DeploymentCreateData>(deploymentMutation, {
-      input: {
-        projectId,
-        environmentId,
-        serviceId: createdService.id,
-      },
-    });
-  } catch {
+  const deployInputs: Array<Record<string, unknown>> = [
+    { projectId, environmentId, serviceId: createdService.id },
+    { environmentId, serviceId: createdService.id },
+    { serviceId: createdService.id },
+  ];
+  let deployErr: string | null = null;
+  for (const deployInput of deployInputs) {
+    try {
+      await railwayGql<DeploymentCreateData>(deploymentMutation, {
+        input: deployInput,
+      });
+      deployErr = null;
+      break;
+    } catch (error) {
+      deployErr = error instanceof Error ? error.message : "unknown deploymentCreate error";
+    }
+  }
+  if (deployErr) {
     // Some Railway setups auto-deploy on service creation.
+    // Keep non-fatal but preserve for visibility.
+    // eslint-disable-next-line no-console
+    console.warn(`deploymentCreate skipped: ${deployErr}`);
   }
 
   return {
