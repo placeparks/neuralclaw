@@ -53,6 +53,26 @@ export async function POST(request: NextRequest) {
         .map((ch: unknown) => channelMap[String(ch).toLowerCase()])
         .filter(Boolean)
     : [];
+  const channelSecrets = {
+    telegramBotToken: payload.channelSecrets?.telegramBotToken
+      ? String(payload.channelSecrets.telegramBotToken)
+      : undefined,
+    discordBotToken: payload.channelSecrets?.discordBotToken
+      ? String(payload.channelSecrets.discordBotToken)
+      : undefined,
+    slackBotToken: payload.channelSecrets?.slackBotToken
+      ? String(payload.channelSecrets.slackBotToken)
+      : undefined,
+    slackAppToken: payload.channelSecrets?.slackAppToken
+      ? String(payload.channelSecrets.slackAppToken)
+      : undefined,
+    whatsappSession: payload.channelSecrets?.whatsappSession
+      ? String(payload.channelSecrets.whatsappSession)
+      : undefined,
+    signalPhone: payload.channelSecrets?.signalPhone
+      ? String(payload.channelSecrets.signalPhone)
+      : undefined,
+  };
 
   const user = await prisma.user.findUnique({ where: { email: session.email } });
   if (!user) {
@@ -71,6 +91,7 @@ export async function POST(request: NextRequest) {
         provider: String(payload.provider),
         channels: selectedChannels.map((c: Channel) => String(c).toLowerCase()),
         providerApiKey: payload.providerApiKey ? String(payload.providerApiKey) : undefined,
+        channelSecrets,
       });
 
       const deployment = await prisma.deployment.create({

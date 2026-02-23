@@ -21,6 +21,14 @@ type CreateRailwayInstanceInput = {
   provider: string;
   channels: string[];
   providerApiKey?: string;
+  channelSecrets?: {
+    telegramBotToken?: string;
+    discordBotToken?: string;
+    slackBotToken?: string;
+    slackAppToken?: string;
+    whatsappSession?: string;
+    signalPhone?: string;
+  };
 };
 
 type CreateRailwayInstanceResult = {
@@ -125,6 +133,24 @@ export async function createRailwayInstanceForUser(
   if (input.providerApiKey) {
     variables.NEURALCLAW_PROVIDER_API_KEY = input.providerApiKey;
   }
+  if (input.channelSecrets?.telegramBotToken) {
+    variables.NEURALCLAW_TELEGRAM_TOKEN = input.channelSecrets.telegramBotToken;
+  }
+  if (input.channelSecrets?.discordBotToken) {
+    variables.NEURALCLAW_DISCORD_TOKEN = input.channelSecrets.discordBotToken;
+  }
+  if (input.channelSecrets?.slackBotToken) {
+    variables.NEURALCLAW_SLACK_BOT_TOKEN = input.channelSecrets.slackBotToken;
+  }
+  if (input.channelSecrets?.slackAppToken) {
+    variables.NEURALCLAW_SLACK_APP_TOKEN = input.channelSecrets.slackAppToken;
+  }
+  if (input.channelSecrets?.whatsappSession) {
+    variables.NEURALCLAW_WHATSAPP_SESSION = input.channelSecrets.whatsappSession;
+  }
+  if (input.channelSecrets?.signalPhone) {
+    variables.NEURALCLAW_SIGNAL_PHONE = input.channelSecrets.signalPhone;
+  }
 
   await railwayGql<RailwayVariableUpsertData>(variableMutation, {
     input: {
@@ -160,4 +186,3 @@ export async function createRailwayInstanceForUser(
     consoleUrl: `https://railway.com/project/${projectId}?environmentId=${environmentId}`,
   };
 }
-

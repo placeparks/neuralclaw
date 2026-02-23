@@ -3,6 +3,14 @@ export type DeployPayload = {
   provider: string;
   channels: string[];
   providerApiKey?: string;
+  channelSecrets?: {
+    telegramBotToken?: string;
+    discordBotToken?: string;
+    slackBotToken?: string;
+    slackAppToken?: string;
+    whatsappSession?: string;
+    signalPhone?: string;
+  };
 };
 
 async function parse(res: Response) {

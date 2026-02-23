@@ -15,6 +15,14 @@ export default function OnboardPage() {
   const [provider, setProvider] = useState("openai");
   const [channels, setChannels] = useState<string[]>(["telegram"]);
   const [providerApiKey, setProviderApiKey] = useState("");
+  const [channelSecrets, setChannelSecrets] = useState({
+    telegramBotToken: "",
+    discordBotToken: "",
+    slackBotToken: "",
+    slackAppToken: "",
+    whatsappSession: "",
+    signalPhone: "",
+  });
   const [status, setStatus] = useState("Checking session...");
   const [deployUrl, setDeployUrl] = useState("");
   const [userEmail, setUserEmail] = useState("");
@@ -23,8 +31,18 @@ export default function OnboardPage() {
 
   const canGoNext = useMemo(() => {
     if (step === 1 && provider !== "local" && !providerApiKey.trim()) return false;
+    if (step === 2) {
+      if (channels.includes("telegram") && !channelSecrets.telegramBotToken.trim()) return false;
+      if (channels.includes("discord") && !channelSecrets.discordBotToken.trim()) return false;
+      if (channels.includes("slack")) {
+        if (!channelSecrets.slackBotToken.trim()) return false;
+        if (!channelSecrets.slackAppToken.trim()) return false;
+      }
+      if (channels.includes("whatsapp") && !channelSecrets.whatsappSession.trim()) return false;
+      if (channels.includes("signal") && !channelSecrets.signalPhone.trim()) return false;
+    }
     return true;
-  }, [step, provider, providerApiKey]);
+  }, [step, provider, providerApiKey, channels, channelSecrets]);
 
   useEffect(() => {
     (async () => {
@@ -65,7 +83,13 @@ export default function OnboardPage() {
     setBusy(true);
     setStatus("Preparing Railway deployment...");
     try {
-      const result = await deployNeuralClaw({ plan, provider, channels, providerApiKey });
+      const result = await deployNeuralClaw({
+        plan,
+        provider,
+        channels,
+        providerApiKey,
+        channelSecrets,
+      });
       setStatus(`${result.status}: ${result.detail}`);
       const url = String(result.deployUrl || "");
       setDeployUrl(url);
@@ -166,6 +190,60 @@ export default function OnboardPage() {
                   </label>
                 ))}
               </div>
+              {channels.includes("telegram") ? (
+                <input
+                  type="password"
+                  placeholder="Telegram Bot Token"
+                  value={channelSecrets.telegramBotToken}
+                  onChange={(e) => setChannelSecrets((s) => ({ ...s, telegramBotToken: e.target.value }))}
+                  className="w-full rounded-lg border border-borderc bg-[#061024] px-3 py-2"
+                />
+              ) : null}
+              {channels.includes("discord") ? (
+                <input
+                  type="password"
+                  placeholder="Discord Bot Token"
+                  value={channelSecrets.discordBotToken}
+                  onChange={(e) => setChannelSecrets((s) => ({ ...s, discordBotToken: e.target.value }))}
+                  className="w-full rounded-lg border border-borderc bg-[#061024] px-3 py-2"
+                />
+              ) : null}
+              {channels.includes("slack") ? (
+                <div className="grid gap-2 md:grid-cols-2">
+                  <input
+                    type="password"
+                    placeholder="Slack Bot Token (xoxb-...)"
+                    value={channelSecrets.slackBotToken}
+                    onChange={(e) => setChannelSecrets((s) => ({ ...s, slackBotToken: e.target.value }))}
+                    className="w-full rounded-lg border border-borderc bg-[#061024] px-3 py-2"
+                  />
+                  <input
+                    type="password"
+                    placeholder="Slack App Token (xapp-...)"
+                    value={channelSecrets.slackAppToken}
+                    onChange={(e) => setChannelSecrets((s) => ({ ...s, slackAppToken: e.target.value }))}
+                    className="w-full rounded-lg border border-borderc bg-[#061024] px-3 py-2"
+                  />
+                </div>
+              ) : null}
+              {channels.includes("whatsapp") ? (
+                <input
+                  type="text"
+                  placeholder="WhatsApp Session ID"
+                  value={channelSecrets.whatsappSession}
+                  onChange={(e) => setChannelSecrets((s) => ({ ...s, whatsappSession: e.target.value }))}
+                  className="w-full rounded-lg border border-borderc bg-[#061024] px-3 py-2"
+                />
+              ) : null}
+              {channels.includes("signal") ? (
+                <input
+                  type="text"
+                  placeholder="Signal Phone (+1234567890)"
+                  value={channelSecrets.signalPhone}
+                  onChange={(e) => setChannelSecrets((s) => ({ ...s, signalPhone: e.target.value }))}
+                  className="w-full rounded-lg border border-borderc bg-[#061024] px-3 py-2"
+                />
+              ) : null}
             </section>
           )}
 
