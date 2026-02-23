@@ -227,21 +227,20 @@ async function updateServiceInstance(
   serviceId: string,
   environmentId: string,
 ): Promise<void> {
-  const startCommand = process.env.RAILWAY_AGENT_START_COMMAND || "python -m neuralclaw.cli gateway";
   const mutation = `
     mutation ServiceInstanceUpdate($serviceId: String!, $environmentId: String!, $input: ServiceInstanceUpdateInput!) {
       serviceInstanceUpdate(serviceId: $serviceId, environmentId: $environmentId, input: $input)
     }
   `;
   try {
+    const input: Record<string, unknown> = {
+      restartPolicyType: "ON_FAILURE",
+      restartPolicyMaxRetries: 10,
+    };
     await railwayGql<{ serviceInstanceUpdate?: boolean }>(mutation, {
       serviceId,
       environmentId,
-      input: {
-        startCommand,
-        restartPolicyType: "ON_FAILURE",
-        restartPolicyMaxRetries: 10,
-      },
+      input,
     });
   } catch {
     // Non-fatal: keep default service settings if mutation isn't available.
