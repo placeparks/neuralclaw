@@ -3,6 +3,32 @@ import { getSupabaseAdmin } from "@/lib/supabase-admin";
 import { encryptToken } from "@/lib/token-crypto";
 import type { DeploymentRequest } from "@/lib/types";
 
+async function triggerProvisioner(origin: string): Promise<string | null> {
+  try {
+    const secret = process.env.PROVISIONER_SECRET;
+    const headers: Record<string, string> = { "Content-Type": "application/json" };
+    if (secret) {
+      headers["x-provisioner-secret"] = secret;
+    }
+
+    const res = await fetch(`${origin}/api/provision/run`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ limit: 1 })
+    });
+
+    if (!res.ok) {
+      const detail = await res.text().catch(() => "");
+      return `auto-provision trigger failed: HTTP ${res.status}${detail ? ` ${detail}` : ""}`;
+    }
+
+    return null;
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    return `auto-provision trigger failed: ${message}`;
+  }
+}
+
 export async function POST(req: Request) {
   try {
     const body = (await req.json()) as DeploymentRequest;
@@ -53,10 +79,16 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: channelErr.message }, { status: 500 });
     }
 
+    const origin = new URL(req.url).origin;
+    const triggerWarning = await triggerProvisioner(origin);
+
     return NextResponse.json({
       ok: true,
       deploymentId: deployment.id,
-      message: "Deployment request queued"
+      message: triggerWarning
+        ? "Deployment queued. Auto-trigger failed; background scheduler should pick it up."
+        : "Deployment queued and provisioner triggered.",
+      warning: triggerWarning
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unexpected server error";
