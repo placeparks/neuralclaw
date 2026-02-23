@@ -29,6 +29,16 @@ type CreateRailwayServiceResult = {
 
 type ServiceCreateData = { serviceCreate?: { id: string; name?: string } };
 type VariableUpsertData = { variableCollectionUpsert?: boolean | null };
+type ServiceSourceQuery = {
+  service: {
+    serviceInstances: {
+      nodes: Array<{
+        environmentId: string;
+        source: { image?: string; repo?: string } | null;
+      }>;
+    };
+  };
+};
 
 const DEFAULT_ENDPOINT = "https://backboard.railway.com/graphql/v2";
 
@@ -83,12 +93,72 @@ function normalizeServiceName(email: string) {
   return `neuralclaw-${cleaned}-${suffix}`.slice(0, 58);
 }
 
+/**
+ * Query the source service to discover its Docker image or GitHub repo.
+ * Falls back to RAILWAY_SOURCE_IMAGE env var if set.
+ */
+async function resolveSource(
+  sourceServiceId: string,
+  environmentId: string,
+): Promise<{ image?: string; repo?: string } | null> {
+  // Explicit override takes priority
+  const envImage = process.env.RAILWAY_SOURCE_IMAGE;
+  if (envImage) return { image: envImage };
+
+  const query = `
+    query GetServiceSource($serviceId: String!) {
+      service(id: $serviceId) {
+        serviceInstances {
+          nodes {
+            environmentId
+            source {
+              image
+              repo
+            }
+          }
+        }
+      }
+    }
+  `;
+
+  try {
+    const data = await railwayGql<ServiceSourceQuery>(query, { serviceId: sourceServiceId });
+    const nodes = data.service?.serviceInstances?.nodes ?? [];
+    // Prefer the matching environment, fall back to first node
+    const match = nodes.find((n) => n.environmentId === environmentId) ?? nodes[0];
+    return match?.source ?? null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Explicitly trigger a deployment for the new service.
+ * Non-fatal — the service may already auto-build when a source is attached.
+ */
+async function triggerDeploy(serviceId: string, environmentId: string): Promise<void> {
+  const mutation = `
+    mutation ServiceInstanceRedeploy($serviceId: String!, $environmentId: String!) {
+      serviceInstanceRedeploy(serviceId: $serviceId, environmentId: $environmentId)
+    }
+  `;
+  try {
+    await railwayGql<{ serviceInstanceRedeploy?: boolean }>(mutation, {
+      serviceId,
+      environmentId,
+    });
+  } catch {
+    // Non-fatal: service should auto-deploy when a source is attached
+  }
+}
+
 async function createService(
   projectId: string,
   sourceServiceId: string,
+  environmentId: string,
   name: string,
 ): Promise<{ id: string; name: string }> {
-  const mutationA = `
+  const mutation = `
     mutation ServiceCreate($input: ServiceCreateInput!) {
       serviceCreate(input: $input) {
         id
@@ -97,28 +167,27 @@ async function createService(
     }
   `;
 
-  const attempts: Array<Record<string, unknown>> = [
-    { projectId, name, sourceServiceId },
-    { projectId, name, templateServiceId: sourceServiceId },
-  ];
+  const src = await resolveSource(sourceServiceId, environmentId);
 
-  let lastError: string | null = null;
-  for (const input of attempts) {
-    try {
-      const created = await railwayGql<ServiceCreateData>(mutationA, { input });
-      if (created.serviceCreate?.id) {
-        return {
-          id: created.serviceCreate.id,
-          name: created.serviceCreate.name || name,
-        };
-      }
-      lastError = "serviceCreate returned no id";
-    } catch (error) {
-      lastError = error instanceof Error ? error.message : "unknown serviceCreate error";
-    }
+  const input: Record<string, unknown> = { projectId, name };
+  if (src?.image) {
+    input.source = { image: src.image };
+  } else if (src?.repo) {
+    input.source = { repo: src.repo };
+  }
+  // If source cannot be resolved, the service is created empty.
+  // It will need to be connected to a source manually in the Railway dashboard,
+  // or set RAILWAY_SOURCE_IMAGE in your environment.
+
+  const created = await railwayGql<ServiceCreateData>(mutation, { input });
+  if (!created.serviceCreate?.id) {
+    throw new Error("serviceCreate returned no id");
   }
 
-  throw new Error(`serviceCreate failed for all input variants. Last error: ${lastError || "none"}`);
+  return {
+    id: created.serviceCreate.id,
+    name: created.serviceCreate.name || name,
+  };
 }
 
 function buildServiceVariables(input: CreateRailwayServiceInput): Record<string, string> {
@@ -149,12 +218,12 @@ export async function createRailwayServiceForUser(
 
   if (!projectId || !sourceServiceId || !environmentId) {
     throw new Error(
-      "Missing owner env vars: RAILWAY_PROJECT_ID, RAILWAY_SERVICE_ID (template service), RAILWAY_BASE_ENVIRONMENT_ID",
+      "Missing owner env vars: RAILWAY_PROJECT_ID, RAILWAY_SERVICE_ID, RAILWAY_BASE_ENVIRONMENT_ID",
     );
   }
 
   const serviceName = normalizeServiceName(input.userEmail);
-  const createdService = await createService(projectId, sourceServiceId, serviceName);
+  const createdService = await createService(projectId, sourceServiceId, environmentId, serviceName);
 
   const variableMutation = `
     mutation VariableCollectionUpsert(
@@ -189,11 +258,8 @@ export async function createRailwayServiceForUser(
     );
   }
 
-  // NOTE:
-  // Some Railway API versions do not expose `deploymentCreate`.
-  // We intentionally skip explicit deploy trigger here.
-  // Service clone + variable upsert still complete, and Railway may auto-build.
-  // If not, the service can be deployed manually from Railway UI.
+  // Trigger deployment after variables are set so the service starts with correct env
+  await triggerDeploy(createdService.id, environmentId);
 
   return {
     projectId,
