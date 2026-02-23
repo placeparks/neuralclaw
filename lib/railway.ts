@@ -191,7 +191,14 @@ async function createService(
 }
 
 function buildServiceVariables(input: CreateRailwayServiceInput): Record<string, string> {
+  // Infrastructure vars the Next.js app needs to boot (shared across all instances)
+  const infra: Record<string, string> = {};
+  if (process.env.DATABASE_URL) infra.DATABASE_URL = process.env.DATABASE_URL;
+  if (process.env.DIRECT_URL) infra.DIRECT_URL = process.env.DIRECT_URL;
+  if (process.env.AUTH_SESSION_SECRET) infra.AUTH_SESSION_SECRET = process.env.AUTH_SESSION_SECRET;
+
   const variables: Record<string, string> = {
+    ...infra,
     NEURALCLUB_USER_EMAIL: input.userEmail,
     NEURALCLUB_PLAN: input.plan,
     NEURALCLUB_PROVIDER: input.provider,
