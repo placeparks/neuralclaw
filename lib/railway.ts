@@ -29,7 +29,6 @@ type CreateRailwayServiceResult = {
 
 type ServiceCreateData = { serviceCreate?: { id: string; name?: string } };
 type VariableUpsertData = { variableCollectionUpsert?: boolean | null };
-type DeploymentCreateData = { deploymentCreate?: { id: string; status?: string } };
 
 const DEFAULT_ENDPOINT = "https://backboard.railway.com/graphql/v2";
 
@@ -190,38 +189,11 @@ export async function createRailwayServiceForUser(
     );
   }
 
-  const deploymentMutation = `
-    mutation TriggerDeploy($input: DeploymentCreateInput!) {
-      deploymentCreate(input: $input) {
-        id
-        status
-      }
-    }
-  `;
-
-  const deployInputs: Array<Record<string, unknown>> = [
-    { projectId, environmentId, serviceId: createdService.id },
-    { environmentId, serviceId: createdService.id },
-    { serviceId: createdService.id },
-  ];
-  let deployErr: string | null = null;
-  for (const deployInput of deployInputs) {
-    try {
-      await railwayGql<DeploymentCreateData>(deploymentMutation, {
-        input: deployInput,
-      });
-      deployErr = null;
-      break;
-    } catch (error) {
-      deployErr = error instanceof Error ? error.message : "unknown deploymentCreate error";
-    }
-  }
-  if (deployErr) {
-    // Some Railway setups auto-deploy on service creation.
-    // Keep non-fatal but preserve for visibility.
-    // eslint-disable-next-line no-console
-    console.warn(`deploymentCreate skipped: ${deployErr}`);
-  }
+  // NOTE:
+  // Some Railway API versions do not expose `deploymentCreate`.
+  // We intentionally skip explicit deploy trigger here.
+  // Service clone + variable upsert still complete, and Railway may auto-build.
+  // If not, the service can be deployed manually from Railway UI.
 
   return {
     projectId,
