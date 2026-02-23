@@ -1,31 +1,8 @@
 import { NextResponse } from "next/server";
+import { runProvision } from "@/lib/provisioner";
 import { getSupabaseAdmin } from "@/lib/supabase-admin";
 import { encryptToken } from "@/lib/token-crypto";
 import type { DeploymentRequest } from "@/lib/types";
-
-async function triggerAutoProvision(req: Request) {
-  const secret = process.env.PROVISIONER_SECRET;
-  const provisionUrl = new URL("/api/provision/run", req.url).toString();
-
-  const headers: Record<string, string> = {
-    "Content-Type": "application/json"
-  };
-  if (secret) {
-    headers["x-provisioner-secret"] = secret;
-  }
-
-  const res = await fetch(provisionUrl, {
-    method: "POST",
-    headers,
-    body: JSON.stringify({ limit: 1 }),
-    cache: "no-store"
-  });
-
-  if (!res.ok) {
-    const txt = await res.text().catch(() => "");
-    throw new Error(`Auto-provision trigger failed (${res.status}): ${txt.slice(0, 300)}`);
-  }
-}
 
 export async function POST(req: Request) {
   try {
@@ -81,7 +58,7 @@ export async function POST(req: Request) {
     let autoProvisionError = "";
 
     try {
-      await triggerAutoProvision(req);
+      await runProvision(1);
     } catch (e) {
       autoProvisionTriggered = false;
       autoProvisionError = e instanceof Error ? e.message : String(e);
