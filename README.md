@@ -50,6 +50,20 @@ npm run prisma:push
 npm run dev
 ```
 
+## Railway Worker Template (Required for real agent deploys)
+
+Create a second Railway service in the same project for agent runtime:
+
+1. Create new service -> Source Repo `placeparks/neuralclaw`
+2. Set Root Directory to `neuralclasw-frontend/worker-template`
+3. Deploy (it uses `worker-template/Dockerfile`)
+4. Name it with a clear hint, e.g. `neuralclaw-worker-template`
+5. Copy that service ID into frontend env:
+   - `RAILWAY_SERVICE_ID=<worker-template-service-id>`
+   - `RAILWAY_TEMPLATE_SERVICE_NAME_HINT=worker`
+
+Do not use your frontend service ID as `RAILWAY_SERVICE_ID`. Cloned user instances must come from this worker template.
+
 ## Behavior
 
 - Register/login writes users to Postgres via Prisma.

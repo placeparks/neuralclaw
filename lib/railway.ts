@@ -296,15 +296,31 @@ function buildServiceVariables(input: CreateRailwayServiceInput): Record<string,
   if (input.providerApiKey) {
     const envName = PROVIDER_KEY_ENV[input.provider.toLowerCase()] ?? "NEURALCLAW_PROVIDER_API_KEY";
     variables[envName] = input.providerApiKey;
+    // Also set NeuralClaw generic fallback key so runtime can always resolve provider keys.
+    if (input.provider.toLowerCase() === "openai") variables.NEURALCLAW_OPENAI_API_KEY = input.providerApiKey;
+    if (input.provider.toLowerCase() === "anthropic") variables.NEURALCLAW_ANTHROPIC_API_KEY = input.providerApiKey;
+    if (input.provider.toLowerCase() === "openrouter") variables.NEURALCLAW_OPENROUTER_API_KEY = input.providerApiKey;
   }
 
   // Channel credentials
   if (input.channelSecrets?.telegramBotToken) variables.NEURALCLAW_TELEGRAM_TOKEN = input.channelSecrets.telegramBotToken;
   if (input.channelSecrets?.discordBotToken) variables.NEURALCLAW_DISCORD_TOKEN = input.channelSecrets.discordBotToken;
-  if (input.channelSecrets?.slackBotToken) variables.NEURALCLAW_SLACK_BOT_TOKEN = input.channelSecrets.slackBotToken;
-  if (input.channelSecrets?.slackAppToken) variables.NEURALCLAW_SLACK_APP_TOKEN = input.channelSecrets.slackAppToken;
-  if (input.channelSecrets?.whatsappSession) variables.NEURALCLAW_WHATSAPP_SESSION = input.channelSecrets.whatsappSession;
-  if (input.channelSecrets?.signalPhone) variables.NEURALCLAW_SIGNAL_PHONE = input.channelSecrets.signalPhone;
+  if (input.channelSecrets?.slackBotToken) {
+    variables.NEURALCLAW_SLACK_BOT_TOKEN = input.channelSecrets.slackBotToken;
+    variables.NEURALCLAW_SLACK_BOT_API_KEY = input.channelSecrets.slackBotToken;
+  }
+  if (input.channelSecrets?.slackAppToken) {
+    variables.NEURALCLAW_SLACK_APP_TOKEN = input.channelSecrets.slackAppToken;
+    variables.NEURALCLAW_SLACK_APP_API_KEY = input.channelSecrets.slackAppToken;
+  }
+  if (input.channelSecrets?.whatsappSession) {
+    variables.NEURALCLAW_WHATSAPP_SESSION = input.channelSecrets.whatsappSession;
+    variables.NEURALCLAW_WHATSAPP_API_KEY = input.channelSecrets.whatsappSession;
+  }
+  if (input.channelSecrets?.signalPhone) {
+    variables.NEURALCLAW_SIGNAL_PHONE = input.channelSecrets.signalPhone;
+    variables.NEURALCLAW_SIGNAL_API_KEY = input.channelSecrets.signalPhone;
+  }
 
   return variables;
 }
