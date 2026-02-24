@@ -32,6 +32,7 @@ create table if not exists public.app_users (
 );
 
 alter table public.app_users add column if not exists mesh_enabled boolean not null default false;
+alter table public.agents add column if not exists railway_domain text;
 
 create table if not exists public.agents (
   id uuid primary key default gen_random_uuid(),
@@ -45,6 +46,7 @@ create table if not exists public.agents (
   status agent_status not null default 'pending',
   railway_service_id text,
   railway_deployment_id text,
+  railway_domain text,
   provision_attempts integer not null default 0,
   error_message text,
   provisioning_started_at timestamptz,

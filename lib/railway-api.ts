@@ -295,15 +295,65 @@ async function triggerDeployment(serviceId: string): Promise<string | null> {
   throw new Error(`Unable to trigger Railway deployment. ${lastErr}`);
 }
 
+export async function generateServiceDomain(serviceId: string): Promise<string | null> {
+  const environmentId = mustEnv("RAILWAY_ENVIRONMENT_ID");
+
+  type DomainData = { serviceDomainCreate?: { domain?: string } };
+
+  const candidates = [
+    {
+      query: `
+        mutation GenerateDomain($serviceId: String!, $environmentId: String!) {
+          serviceDomainCreate(input: {
+            serviceId: $serviceId,
+            environmentId: $environmentId
+          }) {
+            domain
+          }
+        }
+      `,
+      pick: (data: DomainData) => data.serviceDomainCreate?.domain || null
+    },
+    {
+      // Older Railway API shape
+      query: `
+        mutation GenerateDomainAlt($serviceId: String!, $environmentId: String!) {
+          serviceDomainCreate(serviceId: $serviceId, environmentId: $environmentId) {
+            domain
+          }
+        }
+      `,
+      pick: (data: DomainData) => data.serviceDomainCreate?.domain || null
+    }
+  ];
+
+  for (const candidate of candidates) {
+    try {
+      const data = await graphql<DomainData>(candidate.query, { serviceId, environmentId });
+      const raw = candidate.pick(data);
+      if (raw) {
+        return raw.startsWith("http") ? raw : `https://${raw}`;
+      }
+    } catch {
+      continue;
+    }
+  }
+
+  // Domain creation failed (already exists, or API changed) — try reading existing ones.
+  return resolveServiceEndpoint(serviceId);
+}
+
 export async function provisionOnRailway(input: RailwayProvisionInput): Promise<{
   serviceId: string;
   deploymentId: string | null;
+  domain: string | null;
 }> {
   const serviceId = await createService(input.serviceName);
   await upsertVariables(serviceId, input.variables);
+  const domain = await generateServiceDomain(serviceId);
   const deploymentId = await triggerDeployment(serviceId);
 
-  return { serviceId, deploymentId };
+  return { serviceId, deploymentId, domain };
 }
 
 export async function updateRailwayService(input: {

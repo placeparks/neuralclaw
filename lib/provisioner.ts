@@ -121,7 +121,7 @@ async function buildMeshEnvForAgent(userId: string, sourceAgentId: string): Prom
   const targetIds = links.map((l) => l.target_agent_id);
   const targets = await supabase
     .from("agents")
-    .select("id, agent_name, status, railway_service_id")
+    .select("id, agent_name, status, railway_service_id, railway_domain")
     .in("id", targetIds);
 
   if (targets.error || !targets.data) {
@@ -138,7 +138,8 @@ async function buildMeshEnvForAgent(userId: string, sourceAgentId: string): Prom
         agentName: target.agent_name,
         permission: link.permission,
         status: target.status,
-        railwayServiceId: target.railway_service_id
+        railwayServiceId: target.railway_service_id,
+        endpoint: (target as MeshPeerAgentRow & { railway_domain?: string | null }).railway_domain ?? undefined
       };
     })
     .filter(
@@ -150,15 +151,17 @@ async function buildMeshEnvForAgent(userId: string, sourceAgentId: string): Prom
         permission: "delegate" | "read_only" | "blocked";
         status: string;
         railwayServiceId: string | null;
+        endpoint: string | undefined;
       } => Boolean(peer)
     );
 
+  // For peers that don't have a stored domain yet, fall back to querying Railway live.
   if (peers.length > 0) {
     for (const peer of peers) {
-      if (peer.railwayServiceId) {
-        const endpoint = await resolveServiceEndpoint(peer.railwayServiceId);
-        if (endpoint) {
-          (peer as { endpoint?: string }).endpoint = endpoint;
+      if (!peer.endpoint && peer.railwayServiceId) {
+        const resolved = await resolveServiceEndpoint(peer.railwayServiceId);
+        if (resolved) {
+          peer.endpoint = resolved;
         }
       }
     }
@@ -247,6 +250,7 @@ async function processOne(deployment: DeploymentRow) {
       status: "active",
       railway_service_id: provisioned.serviceId,
       railway_deployment_id: provisioned.deploymentId,
+      railway_domain: provisioned.domain ?? null,
       deployed_at: new Date().toISOString(),
       error_message: null
     })
