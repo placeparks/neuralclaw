@@ -17,17 +17,21 @@ export default function LoginPage() {
 
   function onSubmit(e: FormEvent) {
     e.preventDefault();
-    const existing = getStoredUser();
-    if (!existing) {
-      setError("No account found. Please register first.");
-      return;
-    }
-    if (existing.email !== email.trim() || existing.password !== password) {
-      setError("Invalid credentials.");
-      return;
-    }
-    setStoredUser(existing);
-    router.push("/app");
+    setError("");
+    fetch("/api/auth/login", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email: email.trim(), password })
+    })
+      .then(async (res) => {
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || "Login failed");
+        setStoredUser(data.user);
+        router.push("/app");
+      })
+      .catch((err) => {
+        setError(err instanceof Error ? err.message : "Login failed");
+      });
   }
 
   return (

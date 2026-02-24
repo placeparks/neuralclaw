@@ -1,9 +1,9 @@
 "use client";
 
 export type AppUser = {
+  id: string;
   name: string;
   email: string;
-  password: string;
 };
 
 const USER_KEY = "nc_user_v1";

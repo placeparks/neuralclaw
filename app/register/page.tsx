@@ -18,8 +18,21 @@ export default function RegisterPage() {
       setError("Enter valid name, email and password (min 6 chars).");
       return;
     }
-    setStoredUser({ name: name.trim(), email: email.trim(), password });
-    router.push("/onboard");
+    setError("");
+    fetch("/api/auth/register", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name: name.trim(), email: email.trim(), password })
+    })
+      .then(async (res) => {
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || "Registration failed");
+        setStoredUser(data.user);
+        router.push("/onboard");
+      })
+      .catch((err) => {
+        setError(err instanceof Error ? err.message : "Registration failed");
+      });
   }
 
   return (

@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { clearStoredUser, getMeshEnabled, getStoredUser, setMeshEnabled } from "@/lib/session-client";
+import { clearStoredUser, getStoredUser } from "@/lib/session-client";
 
 type Agent = {
   id: string;
@@ -16,6 +16,14 @@ type Agent = {
   created_at: string;
   updated_at: string;
   error_message: string | null;
+};
+
+type MeshLink = {
+  id: string;
+  source_agent_id: string;
+  target_agent_id: string;
+  permission: "delegate" | "read_only" | "blocked";
+  enabled: boolean;
 };
 
 const HEALTH_LABEL: Record<Agent["status"], string> = {
@@ -32,6 +40,11 @@ export default function DashboardPage() {
   const [loading, setLoading] = useState(true);
   const [meshEnabled, setMesh] = useState(false);
   const [name, setName] = useState("Operator");
+  const [links, setLinks] = useState<MeshLink[]>([]);
+  const [meshError, setMeshError] = useState("");
+  const [sourceAgentId, setSourceAgentId] = useState("");
+  const [targetAgentId, setTargetAgentId] = useState("");
+  const [permission, setPermission] = useState<"delegate" | "read_only" | "blocked">("delegate");
 
   const refresh = useCallback(async () => {
     const user = getStoredUser();
@@ -45,6 +58,23 @@ export default function DashboardPage() {
     const data = await res.json();
     const list = (data.agents ?? []) as Agent[];
     setAgents(list);
+    if (list.length > 0) {
+      setSourceAgentId((prev) => prev || list[0].id);
+      setTargetAgentId((prev) => prev || (list[1]?.id ?? list[0].id));
+    }
+
+    const meshConfigRes = await fetch(`/api/mesh/config?email=${encodeURIComponent(user.email)}`);
+    const meshConfig = await meshConfigRes.json();
+    if (meshConfigRes.ok) {
+      setMesh(Boolean(meshConfig.meshEnabled));
+    }
+
+    const meshLinksRes = await fetch(`/api/mesh/links?email=${encodeURIComponent(user.email)}`);
+    const meshLinks = await meshLinksRes.json();
+    if (meshLinksRes.ok) {
+      setLinks((meshLinks.links ?? []) as MeshLink[]);
+    }
+
     setLoading(false);
 
     if (list.length === 0) {
@@ -53,9 +83,77 @@ export default function DashboardPage() {
   }, [router]);
 
   useEffect(() => {
-    setMesh(getMeshEnabled());
     refresh().catch(() => setLoading(false));
   }, [refresh]);
+
+  async function toggleMeshEnabled() {
+    const user = getStoredUser();
+    if (!user) return;
+    const next = !meshEnabled;
+    setMesh(next);
+    const res = await fetch("/api/mesh/config", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email: user.email, meshEnabled: next })
+    });
+    if (!res.ok) {
+      setMesh(!next);
+      const data = await res.json().catch(() => ({}));
+      setMeshError(data.error || "Unable to update mesh setting.");
+    } else {
+      setMeshError("");
+    }
+  }
+
+  async function createLink() {
+    const user = getStoredUser();
+    if (!user) return;
+    if (!sourceAgentId || !targetAgentId || sourceAgentId === targetAgentId) {
+      setMeshError("Choose different source and target agents.");
+      return;
+    }
+    const res = await fetch("/api/mesh/links", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        email: user.email,
+        sourceAgentId,
+        targetAgentId,
+        permission,
+        enabled: true
+      })
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      setMeshError(data.error || "Unable to create mesh link.");
+      return;
+    }
+    setMeshError("");
+    await refresh();
+  }
+
+  async function removeLink(linkId: string) {
+    const user = getStoredUser();
+    if (!user) return;
+    const res = await fetch("/api/mesh/links", {
+      method: "DELETE",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email: user.email, linkId })
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      setMeshError(data.error || "Unable to remove mesh link.");
+      return;
+    }
+    setMeshError("");
+    await refresh();
+  }
+
+  const agentNameById = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const a of agents) map.set(a.id, a.agent_name);
+    return map;
+  }, [agents]);
 
   const stats = useMemo(() => {
     return {
@@ -106,12 +204,44 @@ export default function DashboardPage() {
         </div>
         <button
           className={`switch big ${meshEnabled ? "on" : ""}`}
-          onClick={() => {
-            const next = !meshEnabled;
-            setMesh(next);
-            setMeshEnabled(next);
-          }}
+          onClick={toggleMeshEnabled}
         />
+      </section>
+      {meshError && <div className="status err">{meshError}</div>}
+
+      <section className="card mesh-manage">
+        <h3>Mesh Links</h3>
+        <p className="muted">Define which agent can delegate tasks to another agent.</p>
+        <div className="mesh-row">
+          <select className="select" value={sourceAgentId} onChange={(e) => setSourceAgentId(e.target.value)}>
+            {agents.map((a) => (
+              <option key={a.id} value={a.id}>{a.agent_name} (source)</option>
+            ))}
+          </select>
+          <select className="select" value={targetAgentId} onChange={(e) => setTargetAgentId(e.target.value)}>
+            {agents.map((a) => (
+              <option key={a.id} value={a.id}>{a.agent_name} (target)</option>
+            ))}
+          </select>
+          <select className="select" value={permission} onChange={(e) => setPermission(e.target.value as "delegate" | "read_only" | "blocked")}>
+            <option value="delegate">delegate</option>
+            <option value="read_only">read_only</option>
+            <option value="blocked">blocked</option>
+          </select>
+          <button className="solid-btn" onClick={createLink}>Add Link</button>
+        </div>
+        <div className="link-list">
+          {links.length === 0 && <p className="muted">No mesh links yet.</p>}
+          {links.map((link) => (
+            <div className="link-item" key={link.id}>
+              <span>
+                {agentNameById.get(link.source_agent_id) || link.source_agent_id} {"->"} {agentNameById.get(link.target_agent_id) || link.target_agent_id}
+                {" "}({link.permission})
+              </span>
+              <button className="ghost-btn" onClick={() => removeLink(link.id)}>Remove</button>
+            </div>
+          ))}
+        </div>
       </section>
 
       <section className="agents-board">

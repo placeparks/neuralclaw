@@ -22,10 +22,38 @@ export async function POST(req: Request) {
 
     const supabase = getSupabaseAdmin();
 
+    const email = body.userEmail.trim().toLowerCase();
+    const { data: user } = await supabase
+      .from("app_users")
+      .select("id, display_name")
+      .eq("email", email)
+      .maybeSingle();
+
+    let userId = user?.id || null;
+
+    if (!userId) {
+      const fallbackName = email.split("@")[0] || "user";
+      const createUser = await supabase
+        .from("app_users")
+        .insert({
+          email,
+          display_name: fallbackName,
+          password_hash: "legacy",
+          password_salt: "legacy"
+        })
+        .select("id")
+        .single();
+
+      if (createUser.error || !createUser.data) {
+        return NextResponse.json({ error: createUser.error?.message || "Failed to resolve user." }, { status: 500 });
+      }
+      userId = createUser.data.id;
+    }
+
     const { data: deployment, error: deployErr } = await supabase
-      .from("deployments")
+      .from("agents")
       .insert({
-        user_email: body.userEmail,
+        user_id: userId,
         agent_name: body.agentName,
         plan: body.plan,
         provider: body.provider,
@@ -43,12 +71,12 @@ export async function POST(req: Request) {
     }
 
     const channelRows = body.channels.map((ch) => ({
-      deployment_id: deployment.id,
+      agent_id: deployment.id,
       channel: ch.channel,
       token_encrypted: encryptToken(ch.token)
     }));
 
-    const { error: channelErr } = await supabase.from("deployment_channels").insert(channelRows);
+    const { error: channelErr } = await supabase.from("agent_channels").insert(channelRows);
 
     if (channelErr) {
       return NextResponse.json({ error: channelErr.message }, { status: 500 });

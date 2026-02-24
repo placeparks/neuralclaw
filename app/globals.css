@@ -19,9 +19,21 @@ html,
 body {
   margin: 0;
   min-height: 100%;
-  background: radial-gradient(circle at 10% 0%, #2a1900 0%, transparent 35%),
-    radial-gradient(circle at 90% 10%, #241102 0%, transparent 28%),
-    var(--bg);
+  width: 100%;
+  overflow-x: hidden;
+  background:
+    radial-gradient(circle at 12% 6%, rgba(255, 136, 0, 0.24) 0%, transparent 36%),
+    radial-gradient(circle at 88% 14%, rgba(255, 104, 0, 0.2) 0%, transparent 32%),
+    linear-gradient(
+      180deg,
+      #2a1200 0%,
+      #120d08 24%,
+      #090909 50%,
+      #120d08 76%,
+      #2a1200 100%
+    );
+  background-attachment: fixed;
+  background-repeat: no-repeat;
   color: var(--text);
   font-family: "Space Grotesk", "Sora", "Segoe UI", sans-serif;
 }
@@ -123,6 +135,49 @@ a {
 .feature-card p {
   margin: 0;
   color: var(--muted);
+}
+
+.marketing-stack {
+  margin-top: 14px;
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 12px;
+}
+
+.market-card {
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  background: var(--card);
+  padding: 16px;
+}
+
+.market-card h2 {
+  margin: 0 0 10px;
+  font-size: 1.1rem;
+}
+
+.market-card p {
+  margin: 0;
+  color: var(--muted);
+  line-height: 1.5;
+}
+
+.market-card ul,
+.market-card ol {
+  margin: 0;
+  padding-left: 18px;
+  color: var(--muted);
+  display: grid;
+  gap: 8px;
+}
+
+.market-card.highlight {
+  background: linear-gradient(165deg, rgba(255, 138, 30, 0.14), rgba(16, 16, 16, 0.9));
+}
+
+.market-card.highlight .solid-btn {
+  margin-top: 14px;
+  display: inline-flex;
 }
 
 .solid-btn,
@@ -275,15 +330,16 @@ a {
 }
 
 .auth-wrap {
-  min-height: 100vh;
+  min-height: 100dvh;
   display: grid;
   place-items: center;
-  padding: 16px;
+  padding: 24px 16px;
   position: relative;
+  overflow: hidden;
 }
 
 .auth-card {
-  width: min(520px, 100%);
+  width: min(560px, calc(100vw - 32px));
   padding: 24px;
 }
 
@@ -334,6 +390,33 @@ a {
 .mesh-card p {
   margin: 8px 0 0;
   color: var(--muted);
+}
+
+.mesh-manage {
+  margin-top: 10px;
+}
+
+.mesh-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr 180px auto;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.link-list {
+  margin-top: 12px;
+  display: grid;
+  gap: 8px;
+}
+
+.link-item {
+  border: 1px solid rgba(255, 185, 71, 0.15);
+  border-radius: 10px;
+  padding: 10px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
 }
 
 .agents-board {
@@ -427,9 +510,16 @@ a {
 
 @media (max-width: 940px) {
   .feature-grid,
+  .marketing-stack,
   .grid,
   .kpi-row,
+  .mesh-row,
   .agents-board {
     grid-template-columns: 1fr;
+  }
+
+  .link-item {
+    flex-direction: column;
+    align-items: flex-start;
   }
 }

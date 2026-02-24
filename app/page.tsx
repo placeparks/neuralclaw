@@ -15,10 +15,10 @@ export default function LandingPage() {
       </header>
 
       <section className="hero-block">
-        <p className="eyebrow">One-click agent deployment</p>
-        <h1>Launch, control and mesh your AI agents from one dashboard.</h1>
+        <p className="eyebrow">NeuralClaw Cloud Platform</p>
+        <h1>Build always-online AI agents with channels, memory, security, and mesh collaboration.</h1>
         <p className="hero-copy">
-          Build your own always-online NeuralClaw bots on Railway. Configure channels, track health, and scale from single agent to multi-agent mesh.
+          NeuralClaw turns local AI bots into production-ready cloud agents. Launch dedicated Railway instances, connect Telegram/Discord/Slack/WhatsApp/Signal, and manage everything from one control panel.
         </p>
         <div className="cta-row">
           <Link href="/register" className="solid-btn">Start Free Setup</Link>
@@ -28,16 +28,47 @@ export default function LandingPage() {
 
       <section className="feature-grid">
         <article className="feature-card">
-          <h3>Dedicated instances</h3>
-          <p>Each deployment gets its own Railway service and isolated config.</p>
+          <h3>What this project is</h3>
+          <p>A cloud control layer for NeuralClaw. Users configure an agent in UI, and the platform provisions a dedicated runtime service automatically.</p>
         </article>
         <article className="feature-card">
-          <h3>Channel-ready agents</h3>
-          <p>Telegram, Discord, Slack, WhatsApp and Signal setup from one place.</p>
+          <h3>What we offer</h3>
+          <p>One-click deployments, multi-channel bot setup, model/provider selection, status monitoring, and centralized agent operations.</p>
         </article>
         <article className="feature-card">
-          <h3>Mesh mode</h3>
-          <p>Connect agents so they can delegate tasks and collaborate.</p>
+          <h3>Why it matters</h3>
+          <p>No need to keep bots running on a laptop. Agents stay live in cloud and can later coordinate through mesh mode.</p>
+        </article>
+      </section>
+
+      <section className="marketing-stack">
+        <article className="market-card">
+          <h2>Facilities you get</h2>
+          <ul>
+            <li>Dedicated service per agent deployment</li>
+            <li>Provider support: OpenAI, Anthropic, OpenRouter, Local</li>
+            <li>Channel connectors: Telegram, Discord, Slack, WhatsApp, Signal</li>
+            <li>Secure token handling and provisioning pipeline</li>
+            <li>Live status tracking for deployment and health</li>
+          </ul>
+        </article>
+
+        <article className="market-card">
+          <h2>How it works</h2>
+          <ol>
+            <li>Create account and configure agent details</li>
+            <li>Choose plan, channels, model, and credentials</li>
+            <li>Platform provisions a dedicated Railway instance</li>
+            <li>You monitor and manage all agents from dashboard</li>
+          </ol>
+        </article>
+
+        <article className="market-card highlight">
+          <h2>Next-level mode: Agent Mesh</h2>
+          <p>
+            Mesh allows multiple agents to communicate and delegate tasks. Example: one Telegram bot can ask another specialist bot to research or analyze, then return a final answer.
+          </p>
+          <Link href="/register" className="solid-btn">Create Your First Agent</Link>
         </article>
       </section>
     </main>

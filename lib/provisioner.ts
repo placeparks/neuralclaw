@@ -4,7 +4,7 @@ import { provisionOnRailway } from "@/lib/railway-api";
 
 type DeploymentRow = {
   id: string;
-  user_email: string;
+  user_id: string;
   agent_name: string;
   provider: "openai" | "anthropic" | "openrouter" | "local";
   provider_api_key_encrypted: string | null;
@@ -15,6 +15,12 @@ type DeploymentRow = {
 type ChannelRow = {
   channel: "telegram" | "discord" | "slack" | "whatsapp" | "signal";
   token_encrypted: string;
+};
+
+type MeshLinkRow = {
+  target_agent_id: string;
+  permission: "delegate" | "read_only" | "blocked";
+  enabled: boolean;
 };
 
 function sanitizeServiceName(input: string): string {
@@ -71,7 +77,7 @@ async function processOne(deployment: DeploymentRow) {
   const supabase = getSupabaseAdmin();
 
   const { data: locked, error: lockErr } = await supabase
-    .from("deployments")
+    .from("agents")
     .update({
       status: "provisioning",
       provisioning_started_at: new Date().toISOString(),
@@ -91,9 +97,9 @@ async function processOne(deployment: DeploymentRow) {
   }
 
   const { data: channels, error: channelErr } = await supabase
-    .from("deployment_channels")
+    .from("agent_channels")
     .select("channel, token_encrypted")
-    .eq("deployment_id", deployment.id);
+    .eq("agent_id", deployment.id);
 
   if (channelErr || !channels) {
     throw new Error(channelErr?.message || "Unable to load deployment channels");
@@ -103,14 +109,74 @@ async function processOne(deployment: DeploymentRow) {
   const uniqueSuffix = deployment.id.split("-")[0];
   const serviceName = sanitizeServiceName(`${servicePrefix}-${deployment.agent_name}-${uniqueSuffix}`);
 
+  const { data: userRow, error: userErr } = await supabase
+    .from("app_users")
+    .select("email, mesh_enabled")
+    .eq("id", deployment.user_id)
+    .single();
+
+  if (userErr || !userRow) {
+    throw new Error(userErr?.message || "Unable to load user for deployment");
+  }
+
   const vars: Record<string, string> = {
     NEURALCLAW_PROVIDER: deployment.provider,
     NEURALCLAW_MODEL: deployment.model,
     NEURALCLAW_PLAN: deployment.plan,
-    NEURALCLAW_USER_EMAIL: deployment.user_email,
+    NEURALCLAW_USER_EMAIL: userRow.email,
     NEURALCLAW_AGENT_NAME: deployment.agent_name,
     ...channelEnv(channels as ChannelRow[])
   };
+
+  const meshEnabled = Boolean(userRow.mesh_enabled);
+  vars.NEURALCLAW_MESH_ENABLED = meshEnabled ? "true" : "false";
+
+  if (meshEnabled) {
+    const meshRows = await supabase
+      .from("mesh_links")
+      .select("target_agent_id, permission, enabled")
+      .eq("user_id", deployment.user_id)
+      .eq("source_agent_id", deployment.id)
+      .eq("enabled", true);
+
+    if (!meshRows.error && meshRows.data) {
+      const links = (meshRows.data as MeshLinkRow[]).filter((l) => l.permission !== "blocked");
+      if (links.length > 0) {
+        const targetIds = links.map((l) => l.target_agent_id);
+        const targets = await supabase
+          .from("agents")
+          .select("id, agent_name, status, railway_service_id")
+          .in("id", targetIds);
+
+        if (!targets.error && targets.data) {
+          const targetMap = new Map(targets.data.map((t) => [t.id, t]));
+          const peers = links
+            .map((link) => {
+              const target = targetMap.get(link.target_agent_id);
+              if (!target) return null;
+              return {
+                agentId: target.id,
+                agentName: target.agent_name,
+                permission: link.permission,
+                status: target.status,
+                railwayServiceId: target.railway_service_id
+              };
+            })
+            .filter((peer): peer is {
+              agentId: string;
+              agentName: string;
+              permission: "delegate" | "read_only" | "blocked";
+              status: string;
+              railwayServiceId: string | null;
+            } => Boolean(peer));
+
+          if (peers.length > 0) {
+            vars.NEURALCLAW_MESH_PEERS_JSON = JSON.stringify(peers);
+          }
+        }
+      }
+    }
+  }
 
   const providerEnv = providerKeyEnvName(deployment.provider);
   if (providerEnv && deployment.provider_api_key_encrypted) {
@@ -123,7 +189,7 @@ async function processOne(deployment: DeploymentRow) {
   });
 
   const { error: updateErr } = await supabase
-    .from("deployments")
+    .from("agents")
     .update({
       status: "active",
       railway_service_id: provisioned.serviceId,
@@ -137,6 +203,19 @@ async function processOne(deployment: DeploymentRow) {
     throw new Error(updateErr.message);
   }
 
+  await supabase.from("agent_events").insert({
+    agent_id: deployment.id,
+    event_type: "provisioned",
+    level: "info",
+    message: "Agent provisioned successfully",
+    metadata: {
+      service_id: provisioned.serviceId,
+      deployment_id: provisioned.deploymentId,
+      mesh_enabled: vars.NEURALCLAW_MESH_ENABLED,
+      mesh_peers_present: Boolean(vars.NEURALCLAW_MESH_PEERS_JSON)
+    }
+  });
+
   return {
     deploymentId: deployment.id,
     serviceId: provisioned.serviceId,
@@ -149,8 +228,8 @@ export async function runProvision(limit = 1) {
   const supabase = getSupabaseAdmin();
 
   const { data: pending, error: pendingErr } = await supabase
-    .from("deployments")
-    .select("id, user_email, agent_name, provider, provider_api_key_encrypted, model, plan")
+    .from("agents")
+    .select("id, user_id, agent_name, provider, provider_api_key_encrypted, model, plan")
     .eq("status", "pending")
     .order("created_at", { ascending: true })
     .limit(safeLimit);
@@ -172,7 +251,7 @@ export async function runProvision(limit = 1) {
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       await supabase
-        .from("deployments")
+        .from("agents")
         .update({
           status: "failed",
           error_message: message,
