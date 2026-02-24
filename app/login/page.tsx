@@ -10,6 +10,7 @@ export default function LoginPage() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
+  const [loading, setLoading] = useState(false);
 
   useEffect(() => {
     if (getStoredUser()) router.replace("/app");
@@ -18,10 +19,11 @@ export default function LoginPage() {
   function onSubmit(e: FormEvent) {
     e.preventDefault();
     setError("");
+    setLoading(true);
     fetch("/api/auth/login", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ email: email.trim(), password })
+      body: JSON.stringify({ email: email.trim(), password }),
     })
       .then(async (res) => {
         const data = await res.json();
@@ -31,24 +33,79 @@ export default function LoginPage() {
       })
       .catch((err) => {
         setError(err instanceof Error ? err.message : "Login failed");
+        setLoading(false);
       });
   }
 
   return (
     <main className="auth-wrap">
-      <div className="bg-orb orb-a" />
-      <div className="auth-card">
-        <p className="eyebrow">Welcome back</p>
-        <h1>Sign in to NeuralClaw</h1>
-        <form onSubmit={onSubmit} className="form-stack">
-          <label>Email</label>
-          <input className="input" type="email" value={email} onChange={(e) => setEmail(e.target.value)} />
-          <label>Password</label>
-          <input className="input" type="password" value={password} onChange={(e) => setPassword(e.target.value)} />
-          {error && <div className="status err">{error}</div>}
-          <button className="solid-btn full" type="submit">Sign in</button>
+      <div className="auth-bg-grid" />
+
+      {/* floating orbs */}
+      <div style={{
+        position: "absolute", width: 340, height: 340, borderRadius: "50%",
+        background: "radial-gradient(circle, rgba(255,149,0,0.12) 0%, transparent 70%)",
+        top: "10%", left: "5%", filter: "blur(40px)", pointerEvents: "none",
+        animation: "drift 10s ease-in-out infinite",
+      }} />
+      <div style={{
+        position: "absolute", width: 280, height: 280, borderRadius: "50%",
+        background: "radial-gradient(circle, rgba(139,92,246,0.1) 0%, transparent 70%)",
+        bottom: "10%", right: "5%", filter: "blur(40px)", pointerEvents: "none",
+        animation: "drift 12s ease-in-out infinite reverse",
+      }} />
+
+      <div className="auth-card" style={{ position: "relative", zIndex: 1 }}>
+        <div className="auth-logo-row">
+          <span className="auth-logo-icon">◈</span>
+          NEURALCLAW
+        </div>
+
+        <h1 className="auth-title">Welcome back.</h1>
+        <p className="auth-sub">Sign in to your agent control panel.</p>
+
+        <form onSubmit={onSubmit}>
+          {error && (
+            <div className="auth-error">
+              <span>⚠</span> {error}
+            </div>
+          )}
+
+          <div className="auth-input-wrap">
+            <label className="auth-input-label">Email</label>
+            <input
+              className="auth-input"
+              type="email"
+              autoComplete="email"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              placeholder="you@example.com"
+              required
+            />
+          </div>
+
+          <div className="auth-input-wrap">
+            <label className="auth-input-label">Password</label>
+            <input
+              className="auth-input"
+              type="password"
+              autoComplete="current-password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              placeholder="••••••••"
+              required
+            />
+          </div>
+
+          <button className="auth-submit" type="submit" disabled={loading}>
+            {loading ? "Signing in…" : "Sign In →"}
+          </button>
         </form>
-        <p className="muted">No account? <Link href="/register">Register</Link></p>
+
+        <p className="auth-divider">
+          No account?{" "}
+          <Link href="/register">Create one free</Link>
+        </p>
       </div>
     </main>
   );
