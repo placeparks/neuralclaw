@@ -1,6 +1,6 @@
 import { decryptToken } from "@/lib/token-crypto";
 import { getSupabaseAdmin } from "@/lib/supabase-admin";
-import { provisionOnRailway, resolveServiceEndpoint, updateRailwayService } from "@/lib/railway-api";
+import { generateServiceDomain, provisionOnRailway, resolveServiceEndpoint, updateRailwayService } from "@/lib/railway-api";
 
 type DeploymentRow = {
   id: string;
@@ -321,6 +321,71 @@ export async function runProvision(limit = 1) {
   }
 
   return { ok: true, processed: results.length, results };
+}
+
+export async function backfillDomains(userId?: string) {
+  const supabase = getSupabaseAdmin();
+
+  let query = supabase
+    .from("agents")
+    .select("id, user_id, railway_service_id")
+    .eq("status", "active")
+    .not("railway_service_id", "is", null)
+    .is("railway_domain", null);
+
+  if (userId) {
+    query = query.eq("user_id", userId) as typeof query;
+  }
+
+  const { data: agents, error } = await query;
+
+  if (error) throw new Error(error.message);
+  if (!agents || agents.length === 0) {
+    return { processed: 0, updated: 0, failed: 0, results: [] as Array<Record<string, unknown>> };
+  }
+
+  const results: Array<Record<string, unknown>> = [];
+  const affectedUserIds = new Set<string>();
+
+  for (const agent of agents as Array<{ id: string; user_id: string; railway_service_id: string }>) {
+    try {
+      const domain = await generateServiceDomain(agent.railway_service_id);
+      if (!domain) {
+        results.push({ ok: false, agentId: agent.id, error: "Railway returned no domain" });
+        continue;
+      }
+
+      await supabase
+        .from("agents")
+        .update({ railway_domain: domain })
+        .eq("id", agent.id);
+
+      affectedUserIds.add(agent.user_id);
+      results.push({ ok: true, agentId: agent.id, domain });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      results.push({ ok: false, agentId: agent.id, error: message });
+    }
+  }
+
+  // Re-sync mesh env for every affected user so peer JSON gets the new endpoints.
+  const syncResults: Array<Record<string, unknown>> = [];
+  for (const uid of affectedUserIds) {
+    try {
+      const s = await syncMeshEnvForUser(uid);
+      syncResults.push({ ok: true, userId: uid, ...s });
+    } catch (err) {
+      syncResults.push({ ok: false, userId: uid, error: err instanceof Error ? err.message : String(err) });
+    }
+  }
+
+  return {
+    processed: agents.length,
+    updated: results.filter((r) => r.ok).length,
+    failed: results.filter((r) => !r.ok).length,
+    results,
+    meshSync: syncResults
+  };
 }
 
 export async function syncMeshEnvForUser(userId: string) {
