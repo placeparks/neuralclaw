@@ -13,7 +13,7 @@ export default function LoginPage() {
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
-    if (getStoredUser()) router.replace("/app");
+    if (getStoredUser()) router.replace("/dashboard");
   }, [router]);
 
   function onSubmit(e: FormEvent) {
@@ -29,7 +29,7 @@ export default function LoginPage() {
         const data = await res.json();
         if (!res.ok) throw new Error(data.error || "Login failed");
         setStoredUser(data.user);
-        router.push("/app");
+        router.push("/dashboard");
       })
       .catch((err) => {
         setError(err instanceof Error ? err.message : "Login failed");

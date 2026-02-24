@@ -90,7 +90,7 @@ export default function OnboardPage() {
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Failed");
       setSuccess("Agent deployment submitted. Redirecting to dashboard...");
-      setTimeout(() => router.push("/app"), 900);
+      setTimeout(() => router.push("/dashboard"), 900);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Unexpected error");
     } finally {
