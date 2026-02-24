@@ -23,6 +23,13 @@ type ServiceDomainData = {
     domains?: Array<{ domain?: string; name?: string }>;
     serviceDomains?: Array<{ domain?: string; name?: string }>;
   };
+  serviceInstance?: {
+    domains?: {
+      serviceDomains?: Array<{ domain?: string }>;
+      customDomains?: Array<{ domain?: string }>;
+    };
+    serviceDomains?: Array<{ domain?: string }>;
+  };
 };
 
 export type RailwayProvisionInput = {
@@ -366,39 +373,72 @@ export async function updateRailwayService(input: {
 }
 
 export async function resolveServiceEndpoint(serviceId: string): Promise<string | null> {
-  const candidates = [
-    `
-      query ServiceDomains($id: String!) {
-        service(id: $id) {
-          domains { domain name }
+  const environmentId = process.env.RAILWAY_ENVIRONMENT_ID ?? "";
+
+  // Railway API v2: domains live on serviceInstance (per environment), not on service directly.
+  // Try multiple query shapes to handle API version differences.
+  const candidates: Array<{ query: string; vars: Record<string, unknown>; extract: (d: ServiceDomainData) => string[] }> = [
+    {
+      // Current Railway API v2 — serviceInstance.domains.serviceDomains
+      query: `
+        query ServiceInstanceDomains($serviceId: String!, $environmentId: String!) {
+          serviceInstance(serviceId: $serviceId, environmentId: $environmentId) {
+            domains {
+              serviceDomains { domain }
+              customDomains { domain }
+            }
+          }
         }
-      }
-    `,
-    `
-      query ServiceDomainsAlt($id: String!) {
-        service(id: $id) {
-          serviceDomains { domain name }
+      `,
+      vars: { serviceId, environmentId },
+      extract: (d) => [
+        ...(d.serviceInstance?.domains?.serviceDomains ?? []).map((x) => x.domain ?? ""),
+        ...(d.serviceInstance?.domains?.customDomains ?? []).map((x) => x.domain ?? "")
+      ]
+    },
+    {
+      // Alternate shape — serviceInstance.serviceDomains flat list
+      query: `
+        query ServiceInstanceDomainsAlt($serviceId: String!, $environmentId: String!) {
+          serviceInstance(serviceId: $serviceId, environmentId: $environmentId) {
+            serviceDomains { domain }
+          }
         }
-      }
-    `
+      `,
+      vars: { serviceId, environmentId },
+      extract: (d) => (d.serviceInstance?.serviceDomains ?? []).map((x) => x.domain ?? "")
+    },
+    {
+      // Older Railway API — domains on service object directly
+      query: `
+        query ServiceDomains($id: String!) {
+          service(id: $id) {
+            domains { domain name }
+          }
+        }
+      `,
+      vars: { id: serviceId },
+      extract: (d) => (d.service?.domains ?? []).map((x) => x.domain || x.name || "")
+    },
+    {
+      query: `
+        query ServiceDomainsAlt($id: String!) {
+          service(id: $id) {
+            serviceDomains { domain name }
+          }
+        }
+      `,
+      vars: { id: serviceId },
+      extract: (d) => (d.service?.serviceDomains ?? []).map((x) => x.domain || x.name || "")
+    }
   ];
 
-  for (const query of candidates) {
+  for (const candidate of candidates) {
     try {
-      const data = await graphql<ServiceDomainData>(query, { id: serviceId });
-      const raw =
-        data.service?.domains ??
-        data.service?.serviceDomains ??
-        [];
-      const found = raw
-        .map((d) => d.domain || d.name || "")
-        .map((d) => d.trim())
-        .filter(Boolean)[0];
+      const data = await graphql<ServiceDomainData>(candidate.query, candidate.vars);
+      const found = candidate.extract(data).map((d) => d.trim()).filter(Boolean)[0];
       if (found) {
-        if (found.startsWith("http://") || found.startsWith("https://")) {
-          return found;
-        }
-        return `https://${found}`;
+        return found.startsWith("http") ? found : `https://${found}`;
       }
     } catch {
       continue;
