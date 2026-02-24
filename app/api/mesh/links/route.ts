@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { getSupabaseAdmin } from "@/lib/supabase-admin";
+import { syncMeshEnvForUser } from "@/lib/provisioner";
 
 async function resolveUser(email: string) {
   const supabase = getSupabaseAdmin();
@@ -90,7 +91,15 @@ export async function POST(req: Request) {
       }
     });
 
-    return NextResponse.json({ link: upsert.data });
+    let syncWarning: string | null = null;
+    let syncSummary: Record<string, unknown> | null = null;
+    try {
+      syncSummary = await syncMeshEnvForUser(user.data.id);
+    } catch (syncErr) {
+      syncWarning = syncErr instanceof Error ? syncErr.message : "Failed to sync mesh env";
+    }
+
+    return NextResponse.json({ link: upsert.data, sync: syncSummary, warning: syncWarning });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Unexpected error";
     return NextResponse.json({ error: message }, { status: 500 });
@@ -117,7 +126,15 @@ export async function DELETE(req: Request) {
       .maybeSingle();
 
     if (removed.error) return NextResponse.json({ error: removed.error.message }, { status: 500 });
-    return NextResponse.json({ ok: true });
+    let syncWarning: string | null = null;
+    let syncSummary: Record<string, unknown> | null = null;
+    try {
+      syncSummary = await syncMeshEnvForUser(user.data.id);
+    } catch (syncErr) {
+      syncWarning = syncErr instanceof Error ? syncErr.message : "Failed to sync mesh env";
+    }
+
+    return NextResponse.json({ ok: true, sync: syncSummary, warning: syncWarning });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Unexpected error";
     return NextResponse.json({ error: message }, { status: 500 });

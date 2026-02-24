@@ -1,6 +1,6 @@
 import { decryptToken } from "@/lib/token-crypto";
 import { getSupabaseAdmin } from "@/lib/supabase-admin";
-import { provisionOnRailway } from "@/lib/railway-api";
+import { provisionOnRailway, updateRailwayService } from "@/lib/railway-api";
 
 type DeploymentRow = {
   id: string;
@@ -21,6 +21,13 @@ type MeshLinkRow = {
   target_agent_id: string;
   permission: "delegate" | "read_only" | "blocked";
   enabled: boolean;
+};
+
+type MeshPeerAgentRow = {
+  id: string;
+  agent_name: string;
+  status: string;
+  railway_service_id: string | null;
 };
 
 function sanitizeServiceName(input: string): string {
@@ -71,6 +78,83 @@ function channelEnv(channels: ChannelRow[]): Record<string, string> {
   }
 
   return out;
+}
+
+async function buildMeshEnvForAgent(userId: string, sourceAgentId: string): Promise<Record<string, string>> {
+  const supabase = getSupabaseAdmin();
+
+  const { data: userRow, error: userErr } = await supabase
+    .from("app_users")
+    .select("mesh_enabled")
+    .eq("id", userId)
+    .single();
+
+  if (userErr || !userRow) {
+    throw new Error(userErr?.message || "Unable to load user mesh settings");
+  }
+
+  const vars: Record<string, string> = {
+    NEURALCLAW_MESH_ENABLED: userRow.mesh_enabled ? "true" : "false",
+    NEURALCLAW_MESH_PEERS_JSON: ""
+  };
+
+  if (!userRow.mesh_enabled) {
+    return vars;
+  }
+
+  const meshRows = await supabase
+    .from("mesh_links")
+    .select("target_agent_id, permission, enabled")
+    .eq("user_id", userId)
+    .eq("source_agent_id", sourceAgentId)
+    .eq("enabled", true);
+
+  if (meshRows.error || !meshRows.data) {
+    throw new Error(meshRows.error?.message || "Unable to load mesh links");
+  }
+
+  const links = (meshRows.data as MeshLinkRow[]).filter((l) => l.permission !== "blocked");
+  if (links.length === 0) {
+    return vars;
+  }
+
+  const targetIds = links.map((l) => l.target_agent_id);
+  const targets = await supabase
+    .from("agents")
+    .select("id, agent_name, status, railway_service_id")
+    .in("id", targetIds);
+
+  if (targets.error || !targets.data) {
+    throw new Error(targets.error?.message || "Unable to load mesh peer targets");
+  }
+
+  const targetMap = new Map((targets.data as MeshPeerAgentRow[]).map((t) => [t.id, t]));
+  const peers = links
+    .map((link) => {
+      const target = targetMap.get(link.target_agent_id);
+      if (!target) return null;
+      return {
+        agentId: target.id,
+        agentName: target.agent_name,
+        permission: link.permission,
+        status: target.status,
+        railwayServiceId: target.railway_service_id
+      };
+    })
+    .filter(
+      (
+        peer
+      ): peer is {
+        agentId: string;
+        agentName: string;
+        permission: "delegate" | "read_only" | "blocked";
+        status: string;
+        railwayServiceId: string | null;
+      } => Boolean(peer)
+    );
+
+  vars.NEURALCLAW_MESH_PEERS_JSON = peers.length > 0 ? JSON.stringify(peers) : "";
+  return vars;
 }
 
 async function processOne(deployment: DeploymentRow) {
@@ -128,55 +212,8 @@ async function processOne(deployment: DeploymentRow) {
     ...channelEnv(channels as ChannelRow[])
   };
 
-  const meshEnabled = Boolean(userRow.mesh_enabled);
-  vars.NEURALCLAW_MESH_ENABLED = meshEnabled ? "true" : "false";
-
-  if (meshEnabled) {
-    const meshRows = await supabase
-      .from("mesh_links")
-      .select("target_agent_id, permission, enabled")
-      .eq("user_id", deployment.user_id)
-      .eq("source_agent_id", deployment.id)
-      .eq("enabled", true);
-
-    if (!meshRows.error && meshRows.data) {
-      const links = (meshRows.data as MeshLinkRow[]).filter((l) => l.permission !== "blocked");
-      if (links.length > 0) {
-        const targetIds = links.map((l) => l.target_agent_id);
-        const targets = await supabase
-          .from("agents")
-          .select("id, agent_name, status, railway_service_id")
-          .in("id", targetIds);
-
-        if (!targets.error && targets.data) {
-          const targetMap = new Map(targets.data.map((t) => [t.id, t]));
-          const peers = links
-            .map((link) => {
-              const target = targetMap.get(link.target_agent_id);
-              if (!target) return null;
-              return {
-                agentId: target.id,
-                agentName: target.agent_name,
-                permission: link.permission,
-                status: target.status,
-                railwayServiceId: target.railway_service_id
-              };
-            })
-            .filter((peer): peer is {
-              agentId: string;
-              agentName: string;
-              permission: "delegate" | "read_only" | "blocked";
-              status: string;
-              railwayServiceId: string | null;
-            } => Boolean(peer));
-
-          if (peers.length > 0) {
-            vars.NEURALCLAW_MESH_PEERS_JSON = JSON.stringify(peers);
-          }
-        }
-      }
-    }
-  }
+  const meshVars = await buildMeshEnvForAgent(deployment.user_id, deployment.id);
+  Object.assign(vars, meshVars);
 
   const providerEnv = providerKeyEnvName(deployment.provider);
   if (providerEnv && deployment.provider_api_key_encrypted) {
@@ -264,4 +301,76 @@ export async function runProvision(limit = 1) {
   }
 
   return { ok: true, processed: results.length, results };
+}
+
+export async function syncMeshEnvForUser(userId: string) {
+  const supabase = getSupabaseAdmin();
+
+  const { data: agents, error } = await supabase
+    .from("agents")
+    .select("id, railway_service_id, status")
+    .eq("user_id", userId)
+    .not("railway_service_id", "is", null);
+
+  if (error) {
+    throw new Error(error.message);
+  }
+
+  if (!agents || agents.length === 0) {
+    return { processed: 0, redeployed: 0, failed: 0, results: [] as Array<Record<string, unknown>> };
+  }
+
+  const results: Array<Record<string, unknown>> = [];
+
+  for (const agent of agents) {
+    if (!agent.railway_service_id) continue;
+    try {
+      const meshVars = await buildMeshEnvForAgent(userId, agent.id);
+      const deploy = await updateRailwayService({
+        serviceId: agent.railway_service_id,
+        variables: meshVars
+      });
+
+      await supabase.from("agent_events").insert({
+        agent_id: agent.id,
+        event_type: "mesh_env_synced",
+        level: "info",
+        message: "Mesh environment synced and redeploy triggered",
+        metadata: {
+          deployment_id: deploy.deploymentId,
+          mesh_enabled: meshVars.NEURALCLAW_MESH_ENABLED,
+          mesh_peers_present: Boolean(meshVars.NEURALCLAW_MESH_PEERS_JSON)
+        }
+      });
+
+      results.push({
+        ok: true,
+        agentId: agent.id,
+        serviceId: agent.railway_service_id,
+        deploymentId: deploy.deploymentId
+      });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      await supabase.from("agent_events").insert({
+        agent_id: agent.id,
+        event_type: "mesh_env_sync_failed",
+        level: "error",
+        message,
+        metadata: {}
+      });
+      results.push({
+        ok: false,
+        agentId: agent.id,
+        serviceId: agent.railway_service_id,
+        error: message
+      });
+    }
+  }
+
+  return {
+    processed: results.length,
+    redeployed: results.filter((r) => r.ok).length,
+    failed: results.filter((r) => !r.ok).length,
+    results
+  };
 }

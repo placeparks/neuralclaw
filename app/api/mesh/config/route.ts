@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { getSupabaseAdmin } from "@/lib/supabase-admin";
+import { syncMeshEnvForUser } from "@/lib/provisioner";
 
 async function getUserIdByEmail(email: string) {
   const supabase = getSupabaseAdmin();
@@ -43,7 +44,20 @@ export async function POST(req: Request) {
     if (updated.error || !updated.data) {
       return NextResponse.json({ error: updated.error?.message || "Failed to update mesh config" }, { status: 500 });
     }
-    return NextResponse.json({ meshEnabled: updated.data.mesh_enabled });
+
+    let syncWarning: string | null = null;
+    let syncSummary: Record<string, unknown> | null = null;
+    try {
+      syncSummary = await syncMeshEnvForUser(user.data.id);
+    } catch (syncErr) {
+      syncWarning = syncErr instanceof Error ? syncErr.message : "Failed to sync mesh env";
+    }
+
+    return NextResponse.json({
+      meshEnabled: updated.data.mesh_enabled,
+      sync: syncSummary,
+      warning: syncWarning
+    });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Unexpected error";
     return NextResponse.json({ error: message }, { status: 500 });

@@ -298,3 +298,12 @@ export async function provisionOnRailway(input: RailwayProvisionInput): Promise<
 
   return { serviceId, deploymentId };
 }
+
+export async function updateRailwayService(input: {
+  serviceId: string;
+  variables: Record<string, string>;
+}): Promise<{ deploymentId: string | null }> {
+  await upsertVariables(input.serviceId, input.variables);
+  const deploymentId = await triggerDeployment(input.serviceId);
+  return { deploymentId };
+}
