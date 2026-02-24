@@ -1,6 +1,6 @@
 import { decryptToken } from "@/lib/token-crypto";
 import { getSupabaseAdmin } from "@/lib/supabase-admin";
-import { provisionOnRailway, updateRailwayService } from "@/lib/railway-api";
+import { provisionOnRailway, resolveServiceEndpoint, updateRailwayService } from "@/lib/railway-api";
 
 type DeploymentRow = {
   id: string;
@@ -153,6 +153,17 @@ async function buildMeshEnvForAgent(userId: string, sourceAgentId: string): Prom
       } => Boolean(peer)
     );
 
+  if (peers.length > 0) {
+    for (const peer of peers) {
+      if (peer.railwayServiceId) {
+        const endpoint = await resolveServiceEndpoint(peer.railwayServiceId);
+        if (endpoint) {
+          (peer as { endpoint?: string }).endpoint = endpoint;
+        }
+      }
+    }
+  }
+
   vars.NEURALCLAW_MESH_PEERS_JSON = peers.length > 0 ? JSON.stringify(peers) : "";
   return vars;
 }
@@ -211,6 +222,11 @@ async function processOne(deployment: DeploymentRow) {
     NEURALCLAW_AGENT_NAME: deployment.agent_name,
     ...channelEnv(channels as ChannelRow[])
   };
+
+  const sharedMeshSecret = process.env.NEURALCLAW_MESH_SHARED_SECRET;
+  if (sharedMeshSecret) {
+    vars.NEURALCLAW_MESH_SHARED_SECRET = sharedMeshSecret;
+  }
 
   const meshVars = await buildMeshEnvForAgent(deployment.user_id, deployment.id);
   Object.assign(vars, meshVars);

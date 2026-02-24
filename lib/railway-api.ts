@@ -18,6 +18,13 @@ type DeployData = {
   serviceInstanceDeploy?: { id: string; status?: string };
 };
 
+type ServiceDomainData = {
+  service?: {
+    domains?: Array<{ domain?: string; name?: string }>;
+    serviceDomains?: Array<{ domain?: string; name?: string }>;
+  };
+};
+
 export type RailwayProvisionInput = {
   serviceName: string;
   variables: Record<string, string>;
@@ -306,4 +313,47 @@ export async function updateRailwayService(input: {
   await upsertVariables(input.serviceId, input.variables);
   const deploymentId = await triggerDeployment(input.serviceId);
   return { deploymentId };
+}
+
+export async function resolveServiceEndpoint(serviceId: string): Promise<string | null> {
+  const candidates = [
+    `
+      query ServiceDomains($id: String!) {
+        service(id: $id) {
+          domains { domain name }
+        }
+      }
+    `,
+    `
+      query ServiceDomainsAlt($id: String!) {
+        service(id: $id) {
+          serviceDomains { domain name }
+        }
+      }
+    `
+  ];
+
+  for (const query of candidates) {
+    try {
+      const data = await graphql<ServiceDomainData>(query, { id: serviceId });
+      const raw =
+        data.service?.domains ??
+        data.service?.serviceDomains ??
+        [];
+      const found = raw
+        .map((d) => d.domain || d.name || "")
+        .map((d) => d.trim())
+        .filter(Boolean)[0];
+      if (found) {
+        if (found.startsWith("http://") || found.startsWith("https://")) {
+          return found;
+        }
+        return `https://${found}`;
+      }
+    } catch {
+      continue;
+    }
+  }
+
+  return null;
 }
