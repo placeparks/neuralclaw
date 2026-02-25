@@ -26,7 +26,7 @@ export async function GET(req: Request) {
 
   const { data, error } = await supabase
     .from("agents")
-    .select("id, agent_name, plan, provider, model, status, railway_service_id, created_at, updated_at, error_message")
+    .select("id, agent_name, plan, provider, model, status, railway_service_id, railway_domain, deployed_at, provision_attempts, created_at, updated_at, error_message")
     .eq("user_id", userLookup.data.id)
     .order("created_at", { ascending: false });
 

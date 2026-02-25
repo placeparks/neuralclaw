@@ -372,6 +372,33 @@ export async function updateRailwayService(input: {
   return { deploymentId };
 }
 
+export async function deleteRailwayService(serviceId: string): Promise<void> {
+  const candidates = [
+    {
+      query: `mutation DeleteService($id: String!) { serviceDelete(id: $id) }`,
+      vars: { id: serviceId }
+    },
+    {
+      query: `mutation DeleteServiceAlt($serviceId: String!) { serviceDelete(id: $serviceId) }`,
+      vars: { serviceId }
+    }
+  ];
+  let lastErr = "Unknown delete error";
+  for (const c of candidates) {
+    try {
+      await graphql<{ serviceDelete?: boolean }>(c.query, c.vars);
+      return;
+    } catch (err) {
+      lastErr = err instanceof Error ? err.message : String(err);
+    }
+  }
+  throw new Error(`Unable to delete Railway service. ${lastErr}`);
+}
+
+export async function redeployService(serviceId: string): Promise<void> {
+  await triggerDeployment(serviceId);
+}
+
 export async function resolveServiceEndpoint(serviceId: string): Promise<string | null> {
   const environmentId = process.env.RAILWAY_ENVIRONMENT_ID ?? "";
 
