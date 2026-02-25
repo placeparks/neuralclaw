@@ -44,8 +44,24 @@ type KnowledgeDoc = {
   created_at: string;
 };
 
+type ChannelKey = "telegram" | "discord" | "slack" | "whatsapp" | "signal";
+
+type AgentChannelState = {
+  channel: ChannelKey;
+  enabled: boolean;
+  hasToken: boolean;
+};
+
 type TraceEntry = { category: string; message: string; timestamp: number };
 type MonitorData = { stats: Record<string, unknown>; traces: TraceEntry[] };
+
+const CHANNEL_OPTIONS: Array<{ key: ChannelKey; label: string; placeholder: string }> = [
+  { key: "telegram", label: "Telegram", placeholder: "123456:ABC..." },
+  { key: "discord", label: "Discord", placeholder: "Discord bot token" },
+  { key: "slack", label: "Slack", placeholder: "xoxb-...|xapp-..." },
+  { key: "whatsapp", label: "WhatsApp", placeholder: "Session id" },
+  { key: "signal", label: "Signal", placeholder: "+1234567890" },
+];
 
 const STATUS_LABEL: Record<Agent["status"], string> = {
   pending: "Queued",
@@ -212,13 +228,16 @@ export default function DashboardPage() {
   // Per-agent panels
   const [envExpanded, setEnvExpanded] = useState<Set<string>>(new Set());
   const [kbExpanded, setKbExpanded] = useState<Set<string>>(new Set());
+  const [channelsExpanded, setChannelsExpanded] = useState<Set<string>>(new Set());
   const [monitorExpanded, setMonitorExpanded] = useState<Set<string>>(new Set());
   const [monitorData, setMonitorData] = useState<Record<string, MonitorData>>({});
   const [monitorLoading, setMonitorLoading] = useState<Set<string>>(new Set());
   const [envVars, setEnvVars] = useState<Record<string, Record<string, string>>>({});
   const [knowledgeDocs, setKnowledgeDocs] = useState<Record<string, KnowledgeDoc[]>>({});
+  const [agentChannels, setAgentChannels] = useState<Record<string, AgentChannelState[]>>({});
   const [envLoading, setEnvLoading] = useState<Set<string>>(new Set());
   const [kbLoading, setKbLoading] = useState<Set<string>>(new Set());
+  const [channelsLoading, setChannelsLoading] = useState<Set<string>>(new Set());
   // New env var form state per agent
   const [newEnvKey, setNewEnvKey] = useState<Record<string, string>>({});
   const [newEnvVal, setNewEnvVal] = useState<Record<string, string>>({});
@@ -226,6 +245,7 @@ export default function DashboardPage() {
   // New knowledge form state per agent
   const [newKbTitle, setNewKbTitle] = useState<Record<string, string>>({});
   const [newKbContent, setNewKbContent] = useState<Record<string, string>>({});
+  const [channelTokens, setChannelTokens] = useState<Record<string, Record<ChannelKey, string>>>({});
   const [panelError, setPanelError] = useState<Record<string, string>>({});
 
   const refresh = useCallback(async () => {
@@ -333,6 +353,90 @@ export default function DashboardPage() {
       } else {
         next.add(agentId);
         if (!envVars[agentId]) loadEnv(agentId);
+      }
+      return next;
+    });
+  }
+
+  // Channels
+  async function loadChannels(agentId: string) {
+    const user = getStoredUser();
+    if (!user) return;
+    setChannelsLoading((s) => new Set(s).add(agentId));
+    const res = await fetch(`/api/agents/${agentId}/channels?email=${encodeURIComponent(user.email)}`);
+    const data = await res.json().catch(() => ({}));
+    if (res.ok) {
+      const rows = (data.channels ?? []) as AgentChannelState[];
+      setAgentChannels((prev) => ({ ...prev, [agentId]: rows }));
+      setChannelTokens((prev) => ({
+        ...prev,
+        [agentId]: CHANNEL_OPTIONS.reduce<Record<ChannelKey, string>>((acc, c) => {
+          acc[c.key] = prev[agentId]?.[c.key] ?? "";
+          return acc;
+        }, {} as Record<ChannelKey, string>),
+      }));
+    } else {
+      setPanelError((p) => ({ ...p, [agentId + "_channels"]: data.error ?? "Failed to load channels." }));
+    }
+    setChannelsLoading((s) => { const n = new Set(s); n.delete(agentId); return n; });
+  }
+
+  function setChannelEnabled(agentId: string, channel: ChannelKey, enabled: boolean) {
+    setAgentChannels((prev) => ({
+      ...prev,
+      [agentId]: (prev[agentId] ?? []).map((row) =>
+        row.channel === channel ? { ...row, enabled } : row
+      ),
+    }));
+  }
+
+  async function saveChannels(agentId: string) {
+    const user = getStoredUser();
+    if (!user) return;
+    const rows = agentChannels[agentId] ?? [];
+    const tokens = channelTokens[agentId] ?? ({} as Record<ChannelKey, string>);
+    if (rows.length === 0) {
+      setPanelError((p) => ({ ...p, [agentId + "_channels"]: "No channels loaded." }));
+      return;
+    }
+
+    const payload = rows.map((row) => ({
+      channel: row.channel,
+      enabled: row.enabled,
+      token: tokens[row.channel] ?? "",
+    }));
+
+    setPanelError((p) => ({ ...p, [agentId + "_channels"]: "" }));
+    setChannelsLoading((s) => new Set(s).add(agentId));
+    const res = await fetch(`/api/agents/${agentId}/channels`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email: user.email, channels: payload }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (res.ok) {
+      setAgentChannels((prev) => ({ ...prev, [agentId]: (data.channels ?? []) as AgentChannelState[] }));
+      setChannelTokens((prev) => ({
+        ...prev,
+        [agentId]: CHANNEL_OPTIONS.reduce<Record<ChannelKey, string>>((acc, c) => {
+          acc[c.key] = "";
+          return acc;
+        }, {} as Record<ChannelKey, string>),
+      }));
+    } else {
+      setPanelError((p) => ({ ...p, [agentId + "_channels"]: data.error ?? "Failed to save channels." }));
+    }
+    setChannelsLoading((s) => { const n = new Set(s); n.delete(agentId); return n; });
+  }
+
+  function toggleChannelsPanel(agentId: string) {
+    setChannelsExpanded((prev) => {
+      const next = new Set(prev);
+      if (next.has(agentId)) {
+        next.delete(agentId);
+      } else {
+        next.add(agentId);
+        if (!agentChannels[agentId]) loadChannels(agentId);
       }
       return next;
     });
@@ -646,12 +750,16 @@ export default function DashboardPage() {
           const isPending = actionPending === agent.id;
           const isEnvOpen = envExpanded.has(agent.id);
           const isKbOpen = kbExpanded.has(agent.id);
+          const isChannelsOpen = channelsExpanded.has(agent.id);
           const isMonitorOpen = monitorExpanded.has(agent.id);
           const agentEnv = envVars[agent.id] ?? {};
           const agentDocs = knowledgeDocs[agent.id] ?? [];
+          const agentChannelRows = agentChannels[agent.id] ?? [];
+          const channelTokenDrafts = channelTokens[agent.id] ?? ({} as Record<ChannelKey, string>);
           const agentMonitor = monitorData[agent.id] ?? { stats: {}, traces: [] };
           const isEnvLoading = envLoading.has(agent.id);
           const isKbLoading = kbLoading.has(agent.id);
+          const isChannelsLoading = channelsLoading.has(agent.id);
           const isMonitorLoading = monitorLoading.has(agent.id);
 
           return (
@@ -776,6 +884,14 @@ export default function DashboardPage() {
                   ⚙ Env Vars
                 </button>
                 <button
+                  className={`ghost-btn ${isChannelsOpen ? "active" : ""}`}
+                  style={{ fontSize: "0.8rem", padding: "6px 12px" }}
+                  onClick={() => toggleChannelsPanel(agent.id)}
+                  title="Channel Connections"
+                >
+                  Channels
+                </button>
+                <button
                   className={`ghost-btn ${isKbOpen ? "active" : ""}`}
                   style={{ fontSize: "0.8rem", padding: "6px 12px" }}
                   onClick={() => toggleKbPanel(agent.id)}
@@ -877,6 +993,78 @@ export default function DashboardPage() {
                       {panelError[agent.id + "_env"] && (
                         <p className="status err" style={{ fontSize: "0.78rem", marginTop: 6 }}>
                           {panelError[agent.id + "_env"]}
+                        </p>
+                      )}
+                    </>
+                  )}
+                </div>
+              )}
+
+              {isChannelsOpen && (
+                <div className="agent-panel">
+                  <p className="panel-label">Channels</p>
+                  <p className="muted" style={{ fontSize: "0.78rem", marginBottom: 10 }}>
+                    Enable channels for this agent. Saving triggers redeploy on Railway.
+                  </p>
+                  {isChannelsLoading && <p className="muted" style={{ fontSize: "0.8rem" }}>Loading...</p>}
+                  {!isChannelsLoading && (
+                    <>
+                      {agentChannelRows.length === 0 && (
+                        <p className="muted" style={{ fontSize: "0.8rem" }}>No channel config loaded.</p>
+                      )}
+                      {CHANNEL_OPTIONS.map((option) => {
+                        const row = agentChannelRows.find((r) => r.channel === option.key);
+                        const enabled = row?.enabled ?? false;
+                        const hasToken = row?.hasToken ?? false;
+                        return (
+                          <div
+                            key={option.key}
+                            style={{
+                              display: "grid",
+                              gridTemplateColumns: "120px 80px 1fr",
+                              gap: 8,
+                              alignItems: "center",
+                              marginBottom: 8,
+                            }}
+                          >
+                            <strong style={{ fontSize: "0.82rem" }}>{option.label}</strong>
+                            <label style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: "0.78rem" }}>
+                              <input
+                                type="checkbox"
+                                checked={enabled}
+                                onChange={(e) => setChannelEnabled(agent.id, option.key, e.target.checked)}
+                              />
+                              On
+                            </label>
+                            <input
+                              className="auth-input"
+                              style={{ fontSize: "0.78rem", padding: "6px 10px" }}
+                              type="password"
+                              placeholder={hasToken ? `Configured - enter new token to rotate (${option.placeholder})` : option.placeholder}
+                              value={channelTokenDrafts[option.key] ?? ""}
+                              onChange={(e) =>
+                                setChannelTokens((prev) => ({
+                                  ...prev,
+                                  [agent.id]: {
+                                    ...(prev[agent.id] ?? ({} as Record<ChannelKey, string>)),
+                                    [option.key]: e.target.value,
+                                  },
+                                }))
+                              }
+                            />
+                          </div>
+                        );
+                      })}
+                      <button
+                        className="solid-btn"
+                        style={{ fontSize: "0.8rem", padding: "6px 14px", marginTop: 4 }}
+                        onClick={() => saveChannels(agent.id)}
+                      >
+                        Save Channels
+                      </button>
+                      {panelError[agent.id + "_channels"] && (
+                        <p className="status err" style={{ fontSize: "0.78rem", marginTop: 6 }}>
+                          {panelError[agent.id + "_channels"]}
                         </p>
                       )}
                     </>

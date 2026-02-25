@@ -30,6 +30,15 @@ type MeshPeerAgentRow = {
   railway_service_id: string | null;
 };
 
+const CHANNEL_ENV_KEYS = [
+  "NEURALCLAW_TELEGRAM_TOKEN",
+  "NEURALCLAW_DISCORD_TOKEN",
+  "NEURALCLAW_SLACK_BOT_API_KEY",
+  "NEURALCLAW_SLACK_APP_API_KEY",
+  "NEURALCLAW_WHATSAPP_API_KEY",
+  "NEURALCLAW_SIGNAL_API_KEY",
+] as const;
+
 function sanitizeServiceName(input: string): string {
   return input
     .toLowerCase()
@@ -78,6 +87,77 @@ function channelEnv(channels: ChannelRow[]): Record<string, string> {
   }
 
   return out;
+}
+
+function emptyChannelEnv(): Record<string, string> {
+  return CHANNEL_ENV_KEYS.reduce<Record<string, string>>((acc, key) => {
+    acc[key] = "";
+    return acc;
+  }, {});
+}
+
+async function buildRuntimeVarsForAgent(agentId: string): Promise<{
+  vars: Record<string, string>;
+  serviceId: string;
+}> {
+  const supabase = getSupabaseAdmin();
+
+  const { data: agent, error: agentErr } = await supabase
+    .from("agents")
+    .select("id, user_id, agent_name, provider, provider_api_key_encrypted, model, plan, railway_service_id")
+    .eq("id", agentId)
+    .single();
+
+  if (agentErr || !agent) {
+    throw new Error(agentErr?.message || "Unable to load agent");
+  }
+  if (!agent.railway_service_id) {
+    throw new Error("Agent has no Railway service yet");
+  }
+
+  const { data: userRow, error: userErr } = await supabase
+    .from("app_users")
+    .select("email")
+    .eq("id", agent.user_id)
+    .single();
+
+  if (userErr || !userRow) {
+    throw new Error(userErr?.message || "Unable to load user for agent");
+  }
+
+  const { data: channels, error: channelErr } = await supabase
+    .from("agent_channels")
+    .select("channel, token_encrypted")
+    .eq("agent_id", agent.id);
+
+  if (channelErr || !channels) {
+    throw new Error(channelErr?.message || "Unable to load deployment channels");
+  }
+
+  const vars: Record<string, string> = {
+    NEURALCLAW_PROVIDER: agent.provider,
+    NEURALCLAW_MODEL: agent.model,
+    NEURALCLAW_PLAN: agent.plan,
+    NEURALCLAW_USER_EMAIL: userRow.email,
+    NEURALCLAW_AGENT_NAME: agent.agent_name,
+    ...emptyChannelEnv(),
+    ...channelEnv(channels as ChannelRow[]),
+  };
+
+  const sharedMeshSecret = process.env.NEURALCLAW_MESH_SHARED_SECRET;
+  if (sharedMeshSecret) {
+    vars.NEURALCLAW_MESH_SHARED_SECRET = sharedMeshSecret;
+  }
+
+  const meshVars = await buildMeshEnvForAgent(agent.user_id, agent.id);
+  Object.assign(vars, meshVars);
+
+  const providerEnv = providerKeyEnvName(agent.provider as DeploymentRow["provider"]);
+  if (providerEnv && agent.provider_api_key_encrypted) {
+    vars[providerEnv] = decryptToken(agent.provider_api_key_encrypted);
+  }
+
+  return { vars, serviceId: agent.railway_service_id };
 }
 
 async function buildMeshEnvForAgent(userId: string, sourceAgentId: string): Promise<Record<string, string>> {
@@ -469,5 +549,32 @@ export async function syncMeshEnvForUser(userId: string) {
     redeployed: results.filter((r) => r.ok).length,
     failed: results.filter((r) => !r.ok).length,
     results
+  };
+}
+
+export async function syncAgentRuntimeEnv(agentId: string) {
+  const supabase = getSupabaseAdmin();
+  const { vars, serviceId } = await buildRuntimeVarsForAgent(agentId);
+
+  const deploy = await updateRailwayService({
+    serviceId,
+    variables: vars,
+  });
+
+  await supabase.from("agent_events").insert({
+    agent_id: agentId,
+    event_type: "runtime_env_synced",
+    level: "info",
+    message: "Runtime env synced and redeploy triggered",
+    metadata: {
+      deployment_id: deploy.deploymentId,
+    },
+  });
+
+  return {
+    ok: true,
+    agentId,
+    serviceId,
+    deploymentId: deploy.deploymentId,
   };
 }
