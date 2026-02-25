@@ -37,6 +37,13 @@ type HealthData = {
   peers?: number;
 };
 
+type KnowledgeDoc = {
+  id: string;
+  title: string;
+  content: string;
+  created_at: string;
+};
+
 const STATUS_LABEL: Record<Agent["status"], string> = {
   pending: "Queued",
   provisioning: "Deploying",
@@ -70,6 +77,22 @@ export default function DashboardPage() {
   const [health, setHealth] = useState<Record<string, HealthData>>({});
   const [actionPending, setActionPending] = useState<string | null>(null);
 
+  // Per-agent panels
+  const [envExpanded, setEnvExpanded] = useState<Set<string>>(new Set());
+  const [kbExpanded, setKbExpanded] = useState<Set<string>>(new Set());
+  const [envVars, setEnvVars] = useState<Record<string, Record<string, string>>>({});
+  const [knowledgeDocs, setKnowledgeDocs] = useState<Record<string, KnowledgeDoc[]>>({});
+  const [envLoading, setEnvLoading] = useState<Set<string>>(new Set());
+  const [kbLoading, setKbLoading] = useState<Set<string>>(new Set());
+  // New env var form state per agent
+  const [newEnvKey, setNewEnvKey] = useState<Record<string, string>>({});
+  const [newEnvVal, setNewEnvVal] = useState<Record<string, string>>({});
+  const [envMasked, setEnvMasked] = useState<Record<string, Set<string>>>({});
+  // New knowledge form state per agent
+  const [newKbTitle, setNewKbTitle] = useState<Record<string, string>>({});
+  const [newKbContent, setNewKbContent] = useState<Record<string, string>>({});
+  const [panelError, setPanelError] = useState<Record<string, string>>({});
+
   const refresh = useCallback(async () => {
     const user = getStoredUser();
     if (!user) { router.replace("/login"); return; }
@@ -101,7 +124,6 @@ export default function DashboardPage() {
     setLoading(false);
     if (list.length === 0) { router.replace("/onboard"); return; }
 
-    // Fetch health for all agents in parallel (non-blocking)
     const healthResults = await Promise.all(
       list.map((a) =>
         fetch(`/api/agents/${a.id}/health?email=${encodeURIComponent(user.email)}`)
@@ -115,11 +137,143 @@ export default function DashboardPage() {
 
   useEffect(() => { refresh().catch(() => setLoading(false)); }, [refresh]);
 
-  async function agentAction(
-    agentId: string,
-    action: "pause" | "resume" | "delete",
-    confirmMsg: string
-  ) {
+  // ── Env vars ──────────────────────────────────────────────
+  async function loadEnv(agentId: string) {
+    const user = getStoredUser();
+    if (!user) return;
+    setEnvLoading((s) => new Set(s).add(agentId));
+    const res = await fetch(`/api/agents/${agentId}/env?email=${encodeURIComponent(user.email)}`);
+    if (res.ok) {
+      const data = await res.json();
+      setEnvVars((prev) => ({ ...prev, [agentId]: data.vars ?? {} }));
+    }
+    setEnvLoading((s) => { const n = new Set(s); n.delete(agentId); return n; });
+  }
+
+  async function saveEnvVar(agentId: string) {
+    const user = getStoredUser();
+    if (!user) return;
+    const key = (newEnvKey[agentId] ?? "").trim();
+    const value = newEnvVal[agentId] ?? "";
+    if (!key) { setPanelError((p) => ({ ...p, [agentId + "_env"]: "Key cannot be empty." })); return; }
+    setPanelError((p) => ({ ...p, [agentId + "_env"]: "" }));
+    setEnvLoading((s) => new Set(s).add(agentId));
+    const res = await fetch(`/api/agents/${agentId}/env`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email: user.email, key, value }),
+    });
+    const data = await res.json();
+    if (res.ok) {
+      setEnvVars((prev) => ({ ...prev, [agentId]: data.vars }));
+      setNewEnvKey((p) => ({ ...p, [agentId]: "" }));
+      setNewEnvVal((p) => ({ ...p, [agentId]: "" }));
+    } else {
+      setPanelError((p) => ({ ...p, [agentId + "_env"]: data.error ?? "Failed to save." }));
+    }
+    setEnvLoading((s) => { const n = new Set(s); n.delete(agentId); return n; });
+  }
+
+  async function deleteEnvVar(agentId: string, key: string) {
+    const user = getStoredUser();
+    if (!user) return;
+    setEnvLoading((s) => new Set(s).add(agentId));
+    const res = await fetch(`/api/agents/${agentId}/env`, {
+      method: "DELETE",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email: user.email, key }),
+    });
+    const data = await res.json();
+    if (res.ok) {
+      setEnvVars((prev) => ({ ...prev, [agentId]: data.vars }));
+    }
+    setEnvLoading((s) => { const n = new Set(s); n.delete(agentId); return n; });
+  }
+
+  function toggleEnvPanel(agentId: string) {
+    setEnvExpanded((prev) => {
+      const next = new Set(prev);
+      if (next.has(agentId)) {
+        next.delete(agentId);
+      } else {
+        next.add(agentId);
+        if (!envVars[agentId]) loadEnv(agentId);
+      }
+      return next;
+    });
+  }
+
+  // ── Knowledge base ────────────────────────────────────────
+  async function loadKnowledge(agentId: string) {
+    const user = getStoredUser();
+    if (!user) return;
+    setKbLoading((s) => new Set(s).add(agentId));
+    const res = await fetch(`/api/agents/${agentId}/knowledge?email=${encodeURIComponent(user.email)}`);
+    if (res.ok) {
+      const data = await res.json();
+      setKnowledgeDocs((prev) => ({ ...prev, [agentId]: data.docs ?? [] }));
+    }
+    setKbLoading((s) => { const n = new Set(s); n.delete(agentId); return n; });
+  }
+
+  async function addKnowledgeDoc(agentId: string) {
+    const user = getStoredUser();
+    if (!user) return;
+    const title = (newKbTitle[agentId] ?? "").trim();
+    const content = (newKbContent[agentId] ?? "").trim();
+    if (!title || !content) {
+      setPanelError((p) => ({ ...p, [agentId + "_kb"]: "Title and content are required." }));
+      return;
+    }
+    setPanelError((p) => ({ ...p, [agentId + "_kb"]: "" }));
+    setKbLoading((s) => new Set(s).add(agentId));
+    const res = await fetch(`/api/agents/${agentId}/knowledge`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email: user.email, title, content }),
+    });
+    const data = await res.json();
+    if (res.ok) {
+      setKnowledgeDocs((prev) => ({ ...prev, [agentId]: [...(prev[agentId] ?? []), data.doc] }));
+      setNewKbTitle((p) => ({ ...p, [agentId]: "" }));
+      setNewKbContent((p) => ({ ...p, [agentId]: "" }));
+    } else {
+      setPanelError((p) => ({ ...p, [agentId + "_kb"]: data.error ?? "Failed to save." }));
+    }
+    setKbLoading((s) => { const n = new Set(s); n.delete(agentId); return n; });
+  }
+
+  async function deleteKnowledgeDoc(agentId: string, docId: string) {
+    const user = getStoredUser();
+    if (!user) return;
+    setKbLoading((s) => new Set(s).add(agentId));
+    await fetch(`/api/agents/${agentId}/knowledge`, {
+      method: "DELETE",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email: user.email, docId }),
+    });
+    setKnowledgeDocs((prev) => ({
+      ...prev,
+      [agentId]: (prev[agentId] ?? []).filter((d) => d.id !== docId),
+    }));
+    setKbLoading((s) => { const n = new Set(s); n.delete(agentId); return n; });
+  }
+
+  function toggleKbPanel(agentId: string) {
+    setKbExpanded((prev) => {
+      const next = new Set(prev);
+      if (next.has(agentId)) {
+        next.delete(agentId);
+      } else {
+        next.add(agentId);
+        if (!knowledgeDocs[agentId]) loadKnowledge(agentId);
+      }
+      return next;
+    });
+  }
+
+  // ── Agent actions ─────────────────────────────────────────
+  async function agentAction(agentId: string, action: "pause" | "resume" | "delete", confirmMsg: string) {
     if (!confirm(confirmMsg)) return;
     const user = getStoredUser();
     if (!user) return;
@@ -308,6 +462,12 @@ export default function DashboardPage() {
         {agents.map((agent) => {
           const h = health[agent.id];
           const isPending = actionPending === agent.id;
+          const isEnvOpen = envExpanded.has(agent.id);
+          const isKbOpen = kbExpanded.has(agent.id);
+          const agentEnv = envVars[agent.id] ?? {};
+          const agentDocs = knowledgeDocs[agent.id] ?? [];
+          const isEnvLoading = envLoading.has(agent.id);
+          const isKbLoading = kbLoading.has(agent.id);
 
           return (
             <article className="agent-card" key={agent.id}>
@@ -343,7 +503,6 @@ export default function DashboardPage() {
                 </p>
               )}
 
-              {/* Railway domain link */}
               {agent.railway_domain && (
                 <p style={{ margin: "4px 0 8px", fontSize: "0.8rem" }}>
                   <a
@@ -422,6 +581,23 @@ export default function DashboardPage() {
                     ▶ Resume
                   </button>
                 )}
+                {/* Panel toggles */}
+                <button
+                  className={`ghost-btn ${isEnvOpen ? "active" : ""}`}
+                  style={{ fontSize: "0.8rem", padding: "6px 12px" }}
+                  onClick={() => toggleEnvPanel(agent.id)}
+                  title="Environment Variables"
+                >
+                  ⚙ Env Vars
+                </button>
+                <button
+                  className={`ghost-btn ${isKbOpen ? "active" : ""}`}
+                  style={{ fontSize: "0.8rem", padding: "6px 12px" }}
+                  onClick={() => toggleKbPanel(agent.id)}
+                  title="Knowledge Base"
+                >
+                  📚 Knowledge
+                </button>
                 <button
                   className="ghost-btn"
                   style={{ fontSize: "0.8rem", padding: "6px 12px", borderColor: "rgba(255,77,109,0.3)", color: "var(--danger)", marginLeft: "auto" }}
@@ -433,6 +609,149 @@ export default function DashboardPage() {
                   {isPending ? "…" : "🗑 Delete"}
                 </button>
               </div>
+
+              {/* ── Env Vars Panel ── */}
+              {isEnvOpen && (
+                <div className="agent-panel">
+                  <p className="panel-label">Environment Variables</p>
+                  <p className="muted" style={{ fontSize: "0.78rem", marginBottom: 10 }}>
+                    API keys and config pushed directly to your agent&apos;s Railway container.
+                  </p>
+                  {isEnvLoading && <p className="muted" style={{ fontSize: "0.8rem" }}>Loading…</p>}
+                  {!isEnvLoading && (
+                    <>
+                      {Object.keys(agentEnv).length === 0 && (
+                        <p className="muted" style={{ fontSize: "0.8rem" }}>No variables yet.</p>
+                      )}
+                      {Object.entries(agentEnv).map(([k, v]) => {
+                        const masked = envMasked[agent.id]?.has(k) ?? true;
+                        return (
+                          <div key={k} className="env-row">
+                            <span className="env-key">{k}</span>
+                            <span className="env-val">
+                              {masked ? "••••••••" : v}
+                            </span>
+                            <button
+                              className="ghost-btn"
+                              style={{ fontSize: "0.7rem", padding: "3px 8px" }}
+                              onClick={() =>
+                                setEnvMasked((prev) => {
+                                  const copy = { ...prev };
+                                  const set = new Set(copy[agent.id] ?? []);
+                                  masked ? set.delete(k) : set.add(k);
+                                  copy[agent.id] = set;
+                                  return copy;
+                                })
+                              }
+                            >
+                              {masked ? "Show" : "Hide"}
+                            </button>
+                            <button
+                              className="ghost-btn"
+                              style={{ fontSize: "0.7rem", padding: "3px 8px", color: "var(--danger)", borderColor: "rgba(255,77,109,0.3)" }}
+                              onClick={() => deleteEnvVar(agent.id, k)}
+                            >
+                              ✕
+                            </button>
+                          </div>
+                        );
+                      })}
+                      <div className="env-add-row" style={{ marginTop: 10 }}>
+                        <input
+                          className="auth-input"
+                          style={{ fontSize: "0.8rem", padding: "6px 10px", flex: "0 0 38%" }}
+                          placeholder="KEY"
+                          value={newEnvKey[agent.id] ?? ""}
+                          onChange={(e) => setNewEnvKey((p) => ({ ...p, [agent.id]: e.target.value }))}
+                        />
+                        <input
+                          className="auth-input"
+                          style={{ fontSize: "0.8rem", padding: "6px 10px", flex: 1 }}
+                          placeholder="value"
+                          type="password"
+                          value={newEnvVal[agent.id] ?? ""}
+                          onChange={(e) => setNewEnvVal((p) => ({ ...p, [agent.id]: e.target.value }))}
+                        />
+                        <button
+                          className="solid-btn"
+                          style={{ fontSize: "0.8rem", padding: "6px 14px", whiteSpace: "nowrap" }}
+                          onClick={() => saveEnvVar(agent.id)}
+                        >
+                          + Save
+                        </button>
+                      </div>
+                      {panelError[agent.id + "_env"] && (
+                        <p className="status err" style={{ fontSize: "0.78rem", marginTop: 6 }}>
+                          {panelError[agent.id + "_env"]}
+                        </p>
+                      )}
+                    </>
+                  )}
+                </div>
+              )}
+
+              {/* ── Knowledge Base Panel ── */}
+              {isKbOpen && (
+                <div className="agent-panel">
+                  <p className="panel-label">Knowledge Base</p>
+                  <p className="muted" style={{ fontSize: "0.78rem", marginBottom: 10 }}>
+                    Add text your agent can reference. Ask it anything about stored content.
+                  </p>
+                  {isKbLoading && <p className="muted" style={{ fontSize: "0.8rem" }}>Loading…</p>}
+                  {!isKbLoading && (
+                    <>
+                      {agentDocs.length === 0 && (
+                        <p className="muted" style={{ fontSize: "0.8rem" }}>No knowledge docs yet.</p>
+                      )}
+                      {agentDocs.map((doc) => (
+                        <div key={doc.id} className="kb-item">
+                          <div style={{ flex: 1 }}>
+                            <p style={{ margin: 0, fontWeight: 600, fontSize: "0.85rem" }}>{doc.title}</p>
+                            <p className="muted" style={{ margin: "2px 0 0", fontSize: "0.75rem" }}>
+                              {doc.content.slice(0, 120)}{doc.content.length > 120 ? "…" : ""}
+                            </p>
+                          </div>
+                          <button
+                            className="ghost-btn"
+                            style={{ fontSize: "0.7rem", padding: "3px 8px", color: "var(--danger)", borderColor: "rgba(255,77,109,0.3)" }}
+                            onClick={() => deleteKnowledgeDoc(agent.id, doc.id)}
+                          >
+                            ✕
+                          </button>
+                        </div>
+                      ))}
+                      <div style={{ marginTop: 12, display: "flex", flexDirection: "column", gap: 6 }}>
+                        <input
+                          className="auth-input"
+                          style={{ fontSize: "0.8rem", padding: "6px 10px" }}
+                          placeholder="Title (e.g. Company Overview)"
+                          value={newKbTitle[agent.id] ?? ""}
+                          onChange={(e) => setNewKbTitle((p) => ({ ...p, [agent.id]: e.target.value }))}
+                        />
+                        <textarea
+                          className="auth-input"
+                          style={{ fontSize: "0.8rem", padding: "8px 10px", minHeight: 90, resize: "vertical", fontFamily: "var(--font-mono)" }}
+                          placeholder="Paste your content here…"
+                          value={newKbContent[agent.id] ?? ""}
+                          onChange={(e) => setNewKbContent((p) => ({ ...p, [agent.id]: e.target.value }))}
+                        />
+                        <button
+                          className="solid-btn"
+                          style={{ fontSize: "0.8rem", padding: "6px 14px", alignSelf: "flex-start" }}
+                          onClick={() => addKnowledgeDoc(agent.id)}
+                        >
+                          + Add to Knowledge Base
+                        </button>
+                      </div>
+                      {panelError[agent.id + "_kb"] && (
+                        <p className="status err" style={{ fontSize: "0.78rem", marginTop: 6 }}>
+                          {panelError[agent.id + "_kb"]}
+                        </p>
+                      )}
+                    </>
+                  )}
+                </div>
+              )}
             </article>
           );
         })}

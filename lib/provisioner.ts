@@ -83,19 +83,31 @@ function channelEnv(channels: ChannelRow[]): Record<string, string> {
 async function buildMeshEnvForAgent(userId: string, sourceAgentId: string): Promise<Record<string, string>> {
   const supabase = getSupabaseAdmin();
 
-  const { data: userRow, error: userErr } = await supabase
-    .from("app_users")
-    .select("mesh_enabled")
-    .eq("id", userId)
-    .single();
+  const [userResult, agentResult, knowledgeResult] = await Promise.all([
+    supabase.from("app_users").select("mesh_enabled").eq("id", userId).single(),
+    supabase.from("agents").select("custom_env").eq("id", sourceAgentId).eq("user_id", userId).single(),
+    supabase.from("agent_knowledge").select("title, content").eq("agent_id", sourceAgentId).order("created_at", { ascending: true }),
+  ]);
 
-  if (userErr || !userRow) {
-    throw new Error(userErr?.message || "Unable to load user mesh settings");
+  if (userResult.error || !userResult.data) {
+    throw new Error(userResult.error?.message || "Unable to load user mesh settings");
   }
+
+  const userRow = userResult.data;
+  const customEnv = (agentResult.data?.custom_env as Record<string, string> | null) ?? {};
+
+  // Build knowledge content if docs exist
+  const knowledgeDocs = knowledgeResult.data ?? [];
+  const knowledgeContent = knowledgeDocs.length > 0
+    ? knowledgeDocs.map((d: { title: string; content: string }) => `=== ${d.title} ===\n${d.content}`).join("\n\n")
+    : "";
 
   const vars: Record<string, string> = {
     NEURALCLAW_MESH_ENABLED: userRow.mesh_enabled ? "true" : "false",
-    NEURALCLAW_MESH_PEERS_JSON: ""
+    NEURALCLAW_MESH_PEERS_JSON: "",
+    NEURALCLAW_KNOWLEDGE_CONTENT: knowledgeContent,
+    // Spread custom env vars (user-defined API keys, etc.)
+    ...customEnv,
   };
 
   if (!userRow.mesh_enabled) {
