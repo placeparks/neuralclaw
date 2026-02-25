@@ -10,6 +10,7 @@ type DeploymentRow = {
   provider_api_key_encrypted: string | null;
   model: string;
   plan: "monthly" | "yearly";
+  persona: string | null;
 };
 
 type ChannelRow = {
@@ -318,6 +319,10 @@ async function processOne(deployment: DeploymentRow) {
     ...channelEnv(channels as ChannelRow[])
   };
 
+  if (deployment.persona) {
+    vars.NEURALCLAW_PERSONA = deployment.persona;
+  }
+
   const sharedMeshSecret = process.env.NEURALCLAW_MESH_SHARED_SECRET;
   if (sharedMeshSecret) {
     vars.NEURALCLAW_MESH_SHARED_SECRET = sharedMeshSecret;
@@ -378,7 +383,7 @@ export async function runProvision(limit = 1) {
 
   const { data: pending, error: pendingErr } = await supabase
     .from("agents")
-    .select("id, user_id, agent_name, provider, provider_api_key_encrypted, model, plan")
+    .select("id, user_id, agent_name, provider, provider_api_key_encrypted, model, plan, persona")
     .eq("status", "pending")
     .order("created_at", { ascending: true })
     .limit(safeLimit);

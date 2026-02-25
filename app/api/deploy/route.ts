@@ -60,6 +60,7 @@ export async function POST(req: Request) {
         provider_api_key_encrypted: body.providerApiKey ? encryptToken(body.providerApiKey) : null,
         model: body.model,
         region: body.region,
+        persona: body.persona?.trim() || null,
         status: "pending",
         error_message: null
       })

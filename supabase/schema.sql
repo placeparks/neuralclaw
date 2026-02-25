@@ -33,6 +33,7 @@ create table if not exists public.app_users (
 
 alter table public.app_users add column if not exists mesh_enabled boolean not null default false;
 alter table public.agents add column if not exists railway_domain text;
+alter table public.agents add column if not exists persona text;
 
 create table if not exists public.agents (
   id uuid primary key default gen_random_uuid(),

@@ -71,6 +71,14 @@ const STATUS_LABEL: Record<Agent["status"], string> = {
   paused: "Paused",
 };
 
+const PERSONA_PRESETS: Array<{ key: string; label: string; value: string }> = [
+  { key: "operator", label: "The Operator", value: "You are a direct, precise AI operator. Give concise answers with no fluff. Use bullet points. Never hedge. Never over-explain." },
+  { key: "mentor", label: "The Mentor", value: "You are a patient, knowledgeable mentor. Break down complex topics step by step. Encourage questions. Explain reasoning clearly." },
+  { key: "analyst", label: "The Analyst", value: "You are a rigorous analytical assistant. Always ask for data before drawing conclusions. Highlight assumptions and uncertainties. Think in systems." },
+  { key: "hustler", label: "The Hustler", value: "You are an energetic, results-driven assistant. Focus on action, momentum, and outcomes. Keep energy high. Cut through noise." },
+  { key: "assistant", label: "The Assistant", value: "You are a warm, professional AI assistant. Be proactive, anticipate needs, and communicate with clarity and care." },
+];
+
 function ago(iso: string | null): string {
   if (!iso) return "—";
   const diff = Date.now() - new Date(iso).getTime();
@@ -247,6 +255,12 @@ export default function DashboardPage() {
   const [newKbContent, setNewKbContent] = useState<Record<string, string>>({});
   const [channelTokens, setChannelTokens] = useState<Record<string, Record<ChannelKey, string>>>({});
   const [panelError, setPanelError] = useState<Record<string, string>>({});
+  // Persona panel
+  const [personaExpanded, setPersonaExpanded] = useState<Set<string>>(new Set());
+  const [personaData, setPersonaData] = useState<Record<string, string | null>>({});
+  const [personaLoading, setPersonaLoading] = useState<Set<string>>(new Set());
+  const [selectedPersonaKeyDash, setSelectedPersonaKeyDash] = useState<Record<string, string>>({});
+  const [customPersonaDash, setCustomPersonaDash] = useState<Record<string, string>>({});
 
   const refresh = useCallback(async () => {
     const user = getStoredUser();
@@ -558,6 +572,88 @@ export default function DashboardPage() {
     });
   }
 
+  // ── Persona ───────────────────────────────────────────────
+  async function loadPersona(agentId: string) {
+    const user = getStoredUser();
+    if (!user) return;
+    setPersonaLoading((s) => new Set(s).add(agentId));
+    try {
+      const res = await fetch(`/api/agents/${agentId}/persona?email=${encodeURIComponent(user.email)}`);
+      if (res.ok) {
+        const data = await res.json();
+        setPersonaData((prev) => ({ ...prev, [agentId]: data.persona ?? null }));
+      }
+    } finally {
+      setPersonaLoading((s) => { const n = new Set(s); n.delete(agentId); return n; });
+    }
+  }
+
+  async function savePersona(agentId: string) {
+    const user = getStoredUser();
+    if (!user) return;
+    const key = selectedPersonaKeyDash[agentId] ?? "";
+    let persona: string | null = null;
+    if (key === "custom") {
+      persona = (customPersonaDash[agentId] ?? "").trim() || null;
+    } else if (key) {
+      persona = PERSONA_PRESETS.find((p) => p.key === key)?.value ?? null;
+    }
+    setPanelError((p) => ({ ...p, [agentId + "_persona"]: "" }));
+    setPersonaLoading((s) => new Set(s).add(agentId));
+    try {
+      const res = await fetch(`/api/agents/${agentId}/persona`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: user.email, persona }),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        setPersonaData((prev) => ({ ...prev, [agentId]: data.persona }));
+      } else {
+        setPanelError((p) => ({ ...p, [agentId + "_persona"]: data.error ?? "Failed to save." }));
+      }
+    } finally {
+      setPersonaLoading((s) => { const n = new Set(s); n.delete(agentId); return n; });
+    }
+  }
+
+  async function resetPersona(agentId: string) {
+    const user = getStoredUser();
+    if (!user) return;
+    setPanelError((p) => ({ ...p, [agentId + "_persona"]: "" }));
+    setPersonaLoading((s) => new Set(s).add(agentId));
+    try {
+      const res = await fetch(`/api/agents/${agentId}/persona`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: user.email, persona: null }),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        setPersonaData((prev) => ({ ...prev, [agentId]: null }));
+        setSelectedPersonaKeyDash((p) => ({ ...p, [agentId]: "" }));
+        setCustomPersonaDash((p) => ({ ...p, [agentId]: "" }));
+      } else {
+        setPanelError((p) => ({ ...p, [agentId + "_persona"]: data.error ?? "Failed to reset." }));
+      }
+    } finally {
+      setPersonaLoading((s) => { const n = new Set(s); n.delete(agentId); return n; });
+    }
+  }
+
+  function togglePersonaPanel(agentId: string) {
+    setPersonaExpanded((prev) => {
+      const next = new Set(prev);
+      if (next.has(agentId)) {
+        next.delete(agentId);
+      } else {
+        next.add(agentId);
+        if (personaData[agentId] === undefined) loadPersona(agentId);
+      }
+      return next;
+    });
+  }
+
   // ── Agent actions ─────────────────────────────────────────
   async function agentAction(agentId: string, action: "pause" | "resume" | "delete", confirmMsg: string) {
     if (!confirm(confirmMsg)) return;
@@ -761,6 +857,8 @@ export default function DashboardPage() {
           const isKbLoading = kbLoading.has(agent.id);
           const isChannelsLoading = channelsLoading.has(agent.id);
           const isMonitorLoading = monitorLoading.has(agent.id);
+          const isPersonaOpen = personaExpanded.has(agent.id);
+          const isPersonaLoading = personaLoading.has(agent.id);
 
           return (
             <article className="agent-card" key={agent.id}>
@@ -907,6 +1005,14 @@ export default function DashboardPage() {
                   disabled={agent.status !== "active"}
                 >
                   📊 Monitor
+                </button>
+                <button
+                  className={`ghost-btn ${isPersonaOpen ? "active" : ""}`}
+                  style={{ fontSize: "0.8rem", padding: "6px 12px" }}
+                  onClick={() => togglePersonaPanel(agent.id)}
+                  title="Agent Personality"
+                >
+                  🎭 Personality
                 </button>
                 <button
                   className="ghost-btn"
@@ -1168,6 +1274,112 @@ export default function DashboardPage() {
                   loading={isMonitorLoading}
                   onRefresh={() => loadMonitor(agent.id)}
                 />
+              )}
+
+              {/* ── Persona Panel ── */}
+              {isPersonaOpen && (
+                <div className="agent-panel">
+                  <p className="panel-label">Personality</p>
+                  <p className="muted" style={{ fontSize: "0.78rem", marginBottom: 10 }}>
+                    Define how your agent speaks and reasons. Saving triggers a Railway redeploy.
+                  </p>
+                  {isPersonaLoading && <p className="muted" style={{ fontSize: "0.8rem" }}>Loading…</p>}
+                  {!isPersonaLoading && (
+                    <>
+                      {personaData[agent.id] && (
+                        <div
+                          style={{
+                            marginBottom: 10,
+                            padding: "8px 10px",
+                            background: "rgba(255,255,255,0.04)",
+                            borderRadius: 6,
+                            fontSize: "0.78rem",
+                            color: "var(--muted)",
+                            fontFamily: "var(--font-mono)",
+                          }}
+                        >
+                          Current: {personaData[agent.id]!.slice(0, 160)}
+                          {(personaData[agent.id]?.length ?? 0) > 160 ? "…" : ""}
+                        </div>
+                      )}
+                      {!personaData[agent.id] && (
+                        <p className="muted" style={{ fontSize: "0.78rem", marginBottom: 10 }}>
+                          Using default persona.
+                        </p>
+                      )}
+                      <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 8 }}>
+                        {PERSONA_PRESETS.map((p) => (
+                          <button
+                            key={p.key}
+                            type="button"
+                            className={`plan ${selectedPersonaKeyDash[agent.id] === p.key ? "active" : ""}`}
+                            style={{ fontSize: "0.78rem", padding: "5px 12px" }}
+                            onClick={() =>
+                              setSelectedPersonaKeyDash((prev) => ({
+                                ...prev,
+                                [agent.id]: prev[agent.id] === p.key ? "" : p.key,
+                              }))
+                            }
+                          >
+                            {p.label}
+                          </button>
+                        ))}
+                        <button
+                          type="button"
+                          className={`plan ${selectedPersonaKeyDash[agent.id] === "custom" ? "active" : ""}`}
+                          style={{ fontSize: "0.78rem", padding: "5px 12px" }}
+                          onClick={() =>
+                            setSelectedPersonaKeyDash((prev) => ({
+                              ...prev,
+                              [agent.id]: prev[agent.id] === "custom" ? "" : "custom",
+                            }))
+                          }
+                        >
+                          Custom
+                        </button>
+                      </div>
+                      {selectedPersonaKeyDash[agent.id] === "custom" && (
+                        <textarea
+                          className="auth-input"
+                          style={{
+                            fontSize: "0.8rem",
+                            padding: "8px 10px",
+                            minHeight: 80,
+                            resize: "vertical",
+                            fontFamily: "var(--font-mono)",
+                            marginBottom: 8,
+                            width: "100%",
+                            boxSizing: "border-box",
+                          }}
+                          placeholder="You are Max, a brutally honest growth advisor for SaaS founders..."
+                          value={customPersonaDash[agent.id] ?? ""}
+                          onChange={(e) => setCustomPersonaDash((p) => ({ ...p, [agent.id]: e.target.value }))}
+                        />
+                      )}
+                      <div style={{ display: "flex", gap: 8, marginTop: 4 }}>
+                        <button
+                          className="solid-btn"
+                          style={{ fontSize: "0.8rem", padding: "6px 14px" }}
+                          onClick={() => savePersona(agent.id)}
+                        >
+                          Save Personality
+                        </button>
+                        <button
+                          className="ghost-btn"
+                          style={{ fontSize: "0.8rem", padding: "6px 14px" }}
+                          onClick={() => resetPersona(agent.id)}
+                        >
+                          Reset to Default
+                        </button>
+                      </div>
+                      {panelError[agent.id + "_persona"] && (
+                        <p className="status err" style={{ fontSize: "0.78rem", marginTop: 6 }}>
+                          {panelError[agent.id + "_persona"]}
+                        </p>
+                      )}
+                    </>
+                  )}
+                </div>
               )}
             </article>
           );

@@ -7,6 +7,52 @@ import type { ChannelKey, DeploymentRequest, ProviderKey } from "@/lib/types";
 
 type ChannelConfig = { key: ChannelKey; label: string; placeholder: string };
 
+const PERSONAS: Array<{ key: string; label: string; preview: string }> = [
+  {
+    key: "operator",
+    label: "The Operator",
+    preview: "Direct, concise, no fluff. Military-style brevity. Bullet points. Never hedges.",
+  },
+  {
+    key: "mentor",
+    label: "The Mentor",
+    preview: "Patient and educational. Breaks down complex topics step by step. Encourages questions.",
+  },
+  {
+    key: "analyst",
+    label: "The Analyst",
+    preview: "Data-first, evidence-based. Highlights assumptions. Thinks in systems.",
+  },
+  {
+    key: "hustler",
+    label: "The Hustler",
+    preview: "High energy, results-driven. Focuses on action and momentum. Cuts through noise.",
+  },
+  {
+    key: "assistant",
+    label: "The Assistant",
+    preview: "Warm, professional, proactive. Top EA energy. Anticipates needs.",
+  },
+  {
+    key: "custom",
+    label: "Custom",
+    preview: "Write your own persona.",
+  },
+];
+
+const PERSONA_VALUES: Record<string, string> = {
+  operator:
+    "You are a direct, precise AI operator. Give concise answers with no fluff. Use bullet points. Never hedge. Never over-explain.",
+  mentor:
+    "You are a patient, knowledgeable mentor. Break down complex topics step by step. Encourage questions. Explain reasoning clearly.",
+  analyst:
+    "You are a rigorous analytical assistant. Always ask for data before drawing conclusions. Highlight assumptions and uncertainties. Think in systems.",
+  hustler:
+    "You are an energetic, results-driven assistant. Focus on action, momentum, and outcomes. Keep energy high. Cut through noise.",
+  assistant:
+    "You are a warm, professional AI assistant. Be proactive, anticipate needs, and communicate with clarity and care.",
+};
+
 const CHANNELS: ChannelConfig[] = [
   { key: "telegram", label: "Telegram", placeholder: "123456:ABC..." },
   { key: "discord", label: "Discord", placeholder: "Discord bot token" },
@@ -47,6 +93,8 @@ export default function OnboardPage() {
     whatsapp: false,
     signal: false
   });
+  const [selectedPersonaKey, setSelectedPersonaKey] = useState<string>("");
+  const [customPersona, setCustomPersona] = useState("");
 
   useEffect(() => {
     const user = getStoredUser();
@@ -54,6 +102,12 @@ export default function OnboardPage() {
   }, [router]);
 
   const activeChannels = useMemo(() => CHANNELS.filter((c) => enabledChannels[c.key]), [enabledChannels]);
+
+  const resolvedPersona = useMemo(() => {
+    if (!selectedPersonaKey) return undefined;
+    if (selectedPersonaKey === "custom") return customPersona.trim() || undefined;
+    return PERSONA_VALUES[selectedPersonaKey];
+  }, [selectedPersonaKey, customPersona]);
 
   async function createAgent() {
     const user = getStoredUser();
@@ -77,6 +131,7 @@ export default function OnboardPage() {
       providerApiKey,
       model,
       region,
+      persona: resolvedPersona,
       channels: activeChannels.map((ch) => ({ channel: ch.key, token: tokens[ch.key] }))
     };
 
@@ -144,6 +199,37 @@ export default function OnboardPage() {
             <option value="us-west-1">US West</option>
             <option value="eu-west-1">EU West</option>
           </select>
+
+          <label className="label" style={{ marginTop: 16 }}>
+            Personality <span className="muted" style={{ fontSize: "0.78rem", fontWeight: 400 }}>(optional)</span>
+          </label>
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 8 }}>
+            {PERSONAS.map((p) => (
+              <button
+                key={p.key}
+                type="button"
+                className={`plan ${selectedPersonaKey === p.key ? "active" : ""}`}
+                style={{ fontSize: "0.78rem", padding: "5px 12px" }}
+                onClick={() => setSelectedPersonaKey((prev) => prev === p.key ? "" : p.key)}
+              >
+                {p.label}
+              </button>
+            ))}
+          </div>
+          {selectedPersonaKey && selectedPersonaKey !== "custom" && (
+            <p className="muted" style={{ fontSize: "0.78rem", margin: "0 0 6px" }}>
+              {PERSONAS.find((p) => p.key === selectedPersonaKey)?.preview}
+            </p>
+          )}
+          {selectedPersonaKey === "custom" && (
+            <textarea
+              className="input"
+              style={{ minHeight: 80, resize: "vertical", fontSize: "0.82rem", fontFamily: "var(--font-mono, monospace)" }}
+              placeholder="You are Max, a brutally honest growth advisor for SaaS founders..."
+              value={customPersona}
+              onChange={(e) => setCustomPersona(e.target.value)}
+            />
+          )}
         </div>
 
         <div className="card">

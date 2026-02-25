@@ -17,6 +17,7 @@ export type DeploymentRequest = {
   providerApiKey?: string;
   model: string;
   region: string;
+  persona?: string;
   channels: Array<{
     channel: ChannelKey;
     token: string;
