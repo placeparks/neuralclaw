@@ -44,6 +44,9 @@ type KnowledgeDoc = {
   created_at: string;
 };
 
+type TraceEntry = { category: string; message: string; timestamp: number };
+type MonitorData = { stats: Record<string, unknown>; traces: TraceEntry[] };
+
 const STATUS_LABEL: Record<Agent["status"], string> = {
   pending: "Queued",
   provisioning: "Deploying",
@@ -63,6 +66,135 @@ function ago(iso: string | null): string {
   return `${Math.floor(h / 24)}d ago`;
 }
 
+// ---------------------------------------------------------------------------
+// MonitorPanel — stats grid + trace list with auto-refresh
+// ---------------------------------------------------------------------------
+
+function MonitorPanel({
+  agentId,
+  data,
+  loading,
+  onRefresh,
+}: {
+  agentId: string;
+  data: MonitorData;
+  loading: boolean;
+  onRefresh: () => void;
+}) {
+  useEffect(() => {
+    const id = setInterval(onRefresh, 10_000);
+    return () => clearInterval(id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [agentId]);
+
+  const s = data.stats as Record<string, unknown>;
+  const successRate = typeof s.success_rate === "number" ? s.success_rate : null;
+  const rateClass =
+    successRate === null ? "" : successRate > 0.8 ? "good" : successRate > 0.5 ? "warn" : "bad";
+  const rateLabel = successRate !== null ? `${(successRate * 100).toFixed(0)}%` : "—";
+
+  const CATEGORY_COLOR: Record<string, string> = {
+    perception: "var(--accent, #58a6ff)",
+    memory: "#bc8cff",
+    reasoning: "var(--ok, #3fb950)",
+    action: "var(--amber, #d29922)",
+    swarm: "var(--danger, #f85149)",
+  };
+
+  return (
+    <div className="agent-panel">
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
+        <p className="panel-label" style={{ margin: 0 }}>Live Monitor</p>
+        {loading && <span className="muted" style={{ fontSize: "0.75rem" }}>Refreshing…</span>}
+      </div>
+
+      {/* Stats grid */}
+      <div
+        style={{
+          display: "grid",
+          gridTemplateColumns: "repeat(3, 1fr)",
+          gap: "6px 12px",
+          marginBottom: 14,
+          fontSize: "0.8rem",
+        }}
+      >
+        {[
+          { label: "Provider", value: String(s.provider ?? "—") },
+          { label: "Interactions", value: String(s.interactions ?? "—") },
+          { label: "Success Rate", value: rateLabel, cls: rateClass },
+          { label: "Skills", value: String(s.skills ?? "—") },
+          { label: "Channels", value: String(s.channels ?? "—") },
+          { label: "Uptime", value: String(s.uptime ?? "—") },
+        ].map(({ label, value, cls }) => (
+          <div key={label} style={{ borderBottom: "1px solid rgba(255,255,255,0.06)", paddingBottom: 4 }}>
+            <p className="muted" style={{ margin: 0, fontSize: "0.7rem" }}>{label}</p>
+            <p
+              style={{
+                margin: 0,
+                fontWeight: 600,
+                color: cls === "good"
+                  ? "var(--ok, #3fb950)"
+                  : cls === "warn"
+                  ? "var(--amber, #d29922)"
+                  : cls === "bad"
+                  ? "var(--danger, #f85149)"
+                  : undefined,
+              }}
+            >
+              {value}
+            </p>
+          </div>
+        ))}
+      </div>
+
+      {/* Traces */}
+      <p className="panel-label" style={{ margin: "0 0 8px", fontSize: "0.75rem" }}>
+        Recent Traces
+      </p>
+      {data.traces.length === 0 ? (
+        <p className="muted" style={{ fontSize: "0.78rem" }}>No traces yet.</p>
+      ) : (
+        <div
+          style={{
+            maxHeight: 240,
+            overflowY: "auto",
+            display: "flex",
+            flexDirection: "column",
+            gap: 4,
+          }}
+        >
+          {data.traces.map((t, i) => {
+            const cat = (t.category || "action").toLowerCase();
+            const color = CATEGORY_COLOR[cat] ?? "var(--muted)";
+            return (
+              <div
+                key={i}
+                style={{
+                  borderLeft: `3px solid ${color}`,
+                  paddingLeft: 8,
+                  paddingTop: 4,
+                  paddingBottom: 4,
+                  background: "rgba(255,255,255,0.02)",
+                  borderRadius: "0 4px 4px 0",
+                  fontSize: "0.78rem",
+                }}
+              >
+                <span style={{ color: "var(--muted)", fontSize: "0.7rem", marginRight: 6 }}>
+                  {new Date(t.timestamp * 1000).toLocaleTimeString()}
+                </span>
+                <span style={{ color, fontWeight: 600, marginRight: 6 }}>
+                  [{t.category?.toUpperCase() ?? ""}]
+                </span>
+                <span>{t.message}</span>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function DashboardPage() {
   const router = useRouter();
   const [agents, setAgents] = useState<Agent[]>([]);
@@ -80,6 +212,9 @@ export default function DashboardPage() {
   // Per-agent panels
   const [envExpanded, setEnvExpanded] = useState<Set<string>>(new Set());
   const [kbExpanded, setKbExpanded] = useState<Set<string>>(new Set());
+  const [monitorExpanded, setMonitorExpanded] = useState<Set<string>>(new Set());
+  const [monitorData, setMonitorData] = useState<Record<string, MonitorData>>({});
+  const [monitorLoading, setMonitorLoading] = useState<Set<string>>(new Set());
   const [envVars, setEnvVars] = useState<Record<string, Record<string, string>>>({});
   const [knowledgeDocs, setKnowledgeDocs] = useState<Record<string, KnowledgeDoc[]>>({});
   const [envLoading, setEnvLoading] = useState<Set<string>>(new Set());
@@ -259,6 +394,24 @@ export default function DashboardPage() {
     setKbLoading((s) => { const n = new Set(s); n.delete(agentId); return n; });
   }
 
+  async function uploadKbFile(agentId: string, file: File) {
+    const user = getStoredUser();
+    if (!user) return;
+    setPanelError((p) => ({ ...p, [agentId + "_kb"]: "" }));
+    setKbLoading((s) => new Set(s).add(agentId));
+    const fd = new FormData();
+    fd.append("email", user.email);
+    fd.append("file", file);
+    const res = await fetch(`/api/agents/${agentId}/knowledge/upload`, { method: "POST", body: fd });
+    const data = await res.json();
+    if (res.ok) {
+      setKnowledgeDocs((prev) => ({ ...prev, [agentId]: [...(prev[agentId] ?? []), data.doc] }));
+    } else {
+      setPanelError((p) => ({ ...p, [agentId + "_kb"]: data.error ?? "Upload failed." }));
+    }
+    setKbLoading((s) => { const n = new Set(s); n.delete(agentId); return n; });
+  }
+
   function toggleKbPanel(agentId: string) {
     setKbExpanded((prev) => {
       const next = new Set(prev);
@@ -267,6 +420,35 @@ export default function DashboardPage() {
       } else {
         next.add(agentId);
         if (!knowledgeDocs[agentId]) loadKnowledge(agentId);
+      }
+      return next;
+    });
+  }
+
+  // ── Monitor ───────────────────────────────────────────────
+  async function loadMonitor(agentId: string) {
+    const user = getStoredUser();
+    if (!user) return;
+    setMonitorLoading((s) => new Set(s).add(agentId));
+    try {
+      const res = await fetch(`/api/agents/${agentId}/monitor?email=${encodeURIComponent(user.email)}`);
+      if (res.ok) {
+        const data = await res.json();
+        setMonitorData((prev) => ({ ...prev, [agentId]: { stats: data.stats ?? {}, traces: data.traces ?? [] } }));
+      }
+    } finally {
+      setMonitorLoading((s) => { const n = new Set(s); n.delete(agentId); return n; });
+    }
+  }
+
+  function toggleMonitorPanel(agentId: string) {
+    setMonitorExpanded((prev) => {
+      const next = new Set(prev);
+      if (next.has(agentId)) {
+        next.delete(agentId);
+      } else {
+        next.add(agentId);
+        loadMonitor(agentId);
       }
       return next;
     });
@@ -464,10 +646,13 @@ export default function DashboardPage() {
           const isPending = actionPending === agent.id;
           const isEnvOpen = envExpanded.has(agent.id);
           const isKbOpen = kbExpanded.has(agent.id);
+          const isMonitorOpen = monitorExpanded.has(agent.id);
           const agentEnv = envVars[agent.id] ?? {};
           const agentDocs = knowledgeDocs[agent.id] ?? [];
+          const agentMonitor = monitorData[agent.id] ?? { stats: {}, traces: [] };
           const isEnvLoading = envLoading.has(agent.id);
           const isKbLoading = kbLoading.has(agent.id);
+          const isMonitorLoading = monitorLoading.has(agent.id);
 
           return (
             <article className="agent-card" key={agent.id}>
@@ -599,6 +784,15 @@ export default function DashboardPage() {
                   📚 Knowledge
                 </button>
                 <button
+                  className={`ghost-btn ${isMonitorOpen ? "active" : ""}`}
+                  style={{ fontSize: "0.8rem", padding: "6px 12px" }}
+                  onClick={() => toggleMonitorPanel(agent.id)}
+                  title="Live Monitor"
+                  disabled={agent.status !== "active"}
+                >
+                  📊 Monitor
+                </button>
+                <button
                   className="ghost-btn"
                   style={{ fontSize: "0.8rem", padding: "6px 12px", borderColor: "rgba(255,77,109,0.3)", color: "var(--danger)", marginLeft: "auto" }}
                   disabled={isPending}
@@ -693,7 +887,33 @@ export default function DashboardPage() {
               {/* ── Knowledge Base Panel ── */}
               {isKbOpen && (
                 <div className="agent-panel">
-                  <p className="panel-label">Knowledge Base</p>
+                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
+                    <p className="panel-label" style={{ margin: 0 }}>Knowledge Base</p>
+                    <label
+                      style={{
+                        cursor: "pointer",
+                        fontSize: "0.78rem",
+                        padding: "4px 10px",
+                        borderRadius: 6,
+                        border: "1px solid rgba(255,255,255,0.12)",
+                        color: "var(--muted)",
+                        whiteSpace: "nowrap",
+                      }}
+                      title="Upload PDF, TXT, MD, CSV, JSON…"
+                    >
+                      📎 Upload File
+                      <input
+                        type="file"
+                        accept=".pdf,.txt,.md,.markdown,.csv,.json,.jsonl,.yaml,.yml,.xml,.log,.rst"
+                        style={{ display: "none" }}
+                        onChange={(e) => {
+                          const file = e.target.files?.[0];
+                          if (file) uploadKbFile(agent.id, file);
+                          e.currentTarget.value = "";
+                        }}
+                      />
+                    </label>
+                  </div>
                   <p className="muted" style={{ fontSize: "0.78rem", marginBottom: 10 }}>
                     Add text your agent can reference. Ask it anything about stored content.
                   </p>
@@ -751,6 +971,15 @@ export default function DashboardPage() {
                     </>
                   )}
                 </div>
+              )}
+              {/* ── Monitor Panel ── */}
+              {isMonitorOpen && (
+                <MonitorPanel
+                  agentId={agent.id}
+                  data={agentMonitor}
+                  loading={isMonitorLoading}
+                  onRefresh={() => loadMonitor(agent.id)}
+                />
               )}
             </article>
           );
