@@ -150,12 +150,6 @@ async function buildRuntimeVarsForAgent(agentId: string): Promise<{
     vars.NEURALCLAW_MESH_SHARED_SECRET = sharedMeshSecret;
   }
 
-  // Forward Evolution API config so the runtime can reach the WhatsApp bridge.
-  const evoBridgeUrl = process.env.NEURALCLAW_WHATSAPP_BRIDGE_URL || process.env.EVOLUTION_API_URL;
-  const evoBridgeKey = process.env.NEURALCLAW_WHATSAPP_BRIDGE_API_KEY || process.env.EVOLUTION_API_KEY;
-  if (evoBridgeUrl) vars.NEURALCLAW_WHATSAPP_BRIDGE_URL = evoBridgeUrl;
-  if (evoBridgeKey) vars.NEURALCLAW_WHATSAPP_BRIDGE_API_KEY = evoBridgeKey;
-
   const meshVars = await buildMeshEnvForAgent(agent.user_id, agent.id);
   Object.assign(vars, meshVars);
 
