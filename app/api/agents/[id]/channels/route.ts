@@ -18,11 +18,6 @@ type ExistingChannel = {
   token_encrypted: string;
 };
 
-type EvolutionConfig = {
-  baseUrl: string;
-  apiKey: string;
-};
-
 function isChannelKey(value: string): value is ChannelKey {
   return (ALLOWED_CHANNELS as string[]).includes(value);
 }
@@ -39,7 +34,7 @@ async function resolveOwnedAgent(agentId: string, email: string) {
 
   const { data: agent } = await supabase
     .from("agents")
-    .select("id, agent_name, custom_env")
+    .select("id, agent_name")
     .eq("id", agentId)
     .eq("user_id", user.id)
     .single();
@@ -49,7 +44,6 @@ async function resolveOwnedAgent(agentId: string, email: string) {
     userId: user.id,
     agentId: agent.id as string,
     agentName: (agent as { agent_name?: string | null }).agent_name ?? "agent",
-    customEnv: ((agent as { custom_env?: Record<string, string> | null }).custom_env ?? {}) as Record<string, string>,
   };
 }
 
@@ -62,62 +56,6 @@ function normalizeInstanceName(value: string): string {
     .slice(0, 42);
 }
 
-function resolveEvolutionConfig(customEnv: Record<string, string>): EvolutionConfig | null {
-  const baseUrl =
-    customEnv.NEURALCLAW_WHATSAPP_BRIDGE_URL ||
-    process.env.NEURALCLAW_WHATSAPP_BRIDGE_URL ||
-    process.env.EVOLUTION_API_URL ||
-    "";
-  const apiKey =
-    customEnv.NEURALCLAW_WHATSAPP_BRIDGE_API_KEY ||
-    process.env.NEURALCLAW_WHATSAPP_BRIDGE_API_KEY ||
-    process.env.EVOLUTION_API_KEY ||
-    process.env.AUTHENTICATION_API_KEY ||
-    "";
-
-  if (!baseUrl || !apiKey) {
-    return null;
-  }
-  return {
-    baseUrl: baseUrl.replace(/\/+$/, ""),
-    apiKey,
-  };
-}
-
-async function ensureEvolutionInstance(config: EvolutionConfig, instanceName: string): Promise<void> {
-  // Try connect first (instance may already exist).
-  const connectRes = await fetch(
-    `${config.baseUrl}/instance/connect/${encodeURIComponent(instanceName)}`,
-    {
-      method: "GET",
-      headers: { apikey: config.apiKey },
-      signal: AbortSignal.timeout(8000),
-    }
-  ).catch(() => null);
-
-  if (connectRes && connectRes.ok) {
-    return;
-  }
-
-  const createRes = await fetch(`${config.baseUrl}/instance/create`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      apikey: config.apiKey,
-    },
-    body: JSON.stringify({
-      instanceName,
-      qrcode: true,
-      integration: "WHATSAPP-BAILEYS",
-    }),
-    signal: AbortSignal.timeout(8000),
-  });
-
-  if (!createRes.ok) {
-    const msg = await createRes.text().catch(() => "");
-    throw new Error(`Evolution instance create failed (HTTP ${createRes.status}) ${msg}`);
-  }
-}
 
 // GET /api/agents/[id]/channels?email=...
 export async function GET(
@@ -200,7 +138,6 @@ export async function PUT(
       ((existingRows ?? []) as ExistingChannel[]).map((row) => [row.channel, row.token_encrypted])
     );
 
-    const evolutionConfig = resolveEvolutionConfig(owned.customEnv);
     const autoWhatsAppToken = normalizeInstanceName(`${owned.agentName}-${owned.agentId.slice(0, 8)}-wa`);
 
     const nextRows = [] as Array<{ agent_id: string; channel: ChannelKey; token_encrypted: string }>;
@@ -211,9 +148,6 @@ export async function PUT(
 
       if (!token && row.channel === "whatsapp" && !existing) {
         token = autoWhatsAppToken;
-        if (evolutionConfig) {
-          await ensureEvolutionInstance(evolutionConfig, token);
-        }
       }
 
       const tokenEncrypted = token ? encryptToken(token) : existing;
