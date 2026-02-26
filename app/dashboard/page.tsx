@@ -52,6 +52,14 @@ type AgentChannelState = {
   hasToken: boolean;
 };
 
+type WhatsAppChannelState = {
+  enabled: boolean;
+  connected: boolean;
+  ready: boolean;
+  qr: string | null;
+  reason?: string;
+};
+
 type TraceEntry = { category: string; message: string; timestamp: number };
 type MonitorData = { stats: Record<string, unknown>; traces: TraceEntry[] };
 
@@ -246,6 +254,8 @@ export default function DashboardPage() {
   const [envLoading, setEnvLoading] = useState<Set<string>>(new Set());
   const [kbLoading, setKbLoading] = useState<Set<string>>(new Set());
   const [channelsLoading, setChannelsLoading] = useState<Set<string>>(new Set());
+  const [whatsAppState, setWhatsAppState] = useState<Record<string, WhatsAppChannelState>>({});
+  const [whatsAppLoading, setWhatsAppLoading] = useState<Set<string>>(new Set());
   // New env var form state per agent
   const [newEnvKey, setNewEnvKey] = useState<Record<string, string>>({});
   const [newEnvVal, setNewEnvVal] = useState<Record<string, string>>({});
@@ -437,6 +447,17 @@ export default function DashboardPage() {
           return acc;
         }, {} as Record<ChannelKey, string>),
       }));
+      const waEnabled = ((data.channels ?? []) as AgentChannelState[]).some(
+        (c) => c.channel === "whatsapp" && c.enabled
+      );
+      if (waEnabled) {
+        void loadWhatsAppState(agentId);
+      } else {
+        setWhatsAppState((prev) => ({
+          ...prev,
+          [agentId]: { enabled: false, connected: false, ready: false, qr: null },
+        }));
+      }
     } else {
       setPanelError((p) => ({ ...p, [agentId + "_channels"]: data.error ?? "Failed to save channels." }));
     }
@@ -451,9 +472,38 @@ export default function DashboardPage() {
       } else {
         next.add(agentId);
         if (!agentChannels[agentId]) loadChannels(agentId);
+        void loadWhatsAppState(agentId);
       }
       return next;
     });
+  }
+
+  async function loadWhatsAppState(agentId: string) {
+    const user = getStoredUser();
+    if (!user) return;
+    setWhatsAppLoading((s) => new Set(s).add(agentId));
+    try {
+      const res = await fetch(
+        `/api/agents/${agentId}/channels/whatsapp?email=${encodeURIComponent(user.email)}`
+      );
+      const data = await res.json().catch(() => ({}));
+      setWhatsAppState((prev) => ({
+        ...prev,
+        [agentId]: {
+          enabled: Boolean(data.enabled),
+          connected: Boolean(data.connected),
+          ready: Boolean(data.ready),
+          qr: typeof data.qr === "string" ? data.qr : null,
+          reason: typeof data.reason === "string" ? data.reason : undefined,
+        },
+      }));
+    } finally {
+      setWhatsAppLoading((s) => {
+        const n = new Set(s);
+        n.delete(agentId);
+        return n;
+      });
+    }
   }
 
   // ── Knowledge base ────────────────────────────────────────
@@ -852,6 +902,8 @@ export default function DashboardPage() {
           const agentDocs = knowledgeDocs[agent.id] ?? [];
           const agentChannelRows = agentChannels[agent.id] ?? [];
           const channelTokenDrafts = channelTokens[agent.id] ?? ({} as Record<ChannelKey, string>);
+          const waState = whatsAppState[agent.id];
+          const waLoading = whatsAppLoading.has(agent.id);
           const agentMonitor = monitorData[agent.id] ?? { stats: {}, traces: [] };
           const isEnvLoading = envLoading.has(agent.id);
           const isKbLoading = kbLoading.has(agent.id);
@@ -1168,6 +1220,69 @@ export default function DashboardPage() {
                       >
                         Save Channels
                       </button>
+                      {agentChannelRows.some((r) => r.channel === "whatsapp" && r.enabled) && (
+                        <div style={{ marginTop: 10, paddingTop: 10, borderTop: "1px solid rgba(255,255,255,0.08)" }}>
+                          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
+                            <strong style={{ fontSize: "0.82rem" }}>WhatsApp Pairing</strong>
+                            <button
+                              className="ghost-btn"
+                              style={{ fontSize: "0.75rem", padding: "4px 10px" }}
+                              onClick={() => loadWhatsAppState(agent.id)}
+                            >
+                              {waLoading ? "Refreshing..." : "Refresh QR"}
+                            </button>
+                          </div>
+                          <p className="muted" style={{ fontSize: "0.76rem", margin: "0 0 8px" }}>
+                            If not connected, scan the QR below from WhatsApp Linked Devices.
+                          </p>
+                          {waState?.connected && (
+                            <p style={{ fontSize: "0.78rem", color: "var(--ok)", margin: "0 0 8px" }}>
+                              WhatsApp connected.
+                            </p>
+                          )}
+                          {!waState?.connected && waState?.reason && (
+                            <p className="muted" style={{ fontSize: "0.76rem", margin: "0 0 8px" }}>
+                              {waState.reason}
+                            </p>
+                          )}
+                          {waState?.qr ? (
+                            waState.qr.startsWith("data:image/") ? (
+                              <img
+                                src={waState.qr}
+                                alt="WhatsApp QR"
+                                style={{
+                                  width: 220,
+                                  maxWidth: "100%",
+                                  borderRadius: 8,
+                                  border: "1px solid rgba(255,255,255,0.12)",
+                                  background: "#fff",
+                                  padding: 6,
+                                }}
+                              />
+                            ) : (
+                              <pre
+                                style={{
+                                  whiteSpace: "pre-wrap",
+                                  fontSize: "0.65rem",
+                                  lineHeight: 1.25,
+                                  padding: 8,
+                                  borderRadius: 8,
+                                  background: "rgba(255,255,255,0.03)",
+                                  border: "1px solid rgba(255,255,255,0.08)",
+                                  maxHeight: 180,
+                                  overflowY: "auto",
+                                }}
+                              >
+                                {waState.qr}
+                              </pre>
+                            )
+                          ) : (
+                            <p className="muted" style={{ fontSize: "0.76rem", margin: 0 }}>
+                              QR not available yet. Click &quot;Refresh QR&quot; after redeploy completes.
+                            </p>
+                          )}
+                        </div>
+                      )}
                       {panelError[agent.id + "_channels"] && (
                         <p className="status err" style={{ fontSize: "0.78rem", marginTop: 6 }}>
                           {panelError[agent.id + "_channels"]}
