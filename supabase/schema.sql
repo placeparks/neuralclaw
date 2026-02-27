@@ -6,7 +6,7 @@ begin
     create type billing_plan as enum ('monthly', 'yearly');
   end if;
   if not exists (select 1 from pg_type where typname = 'provider_key') then
-    create type provider_key as enum ('openai', 'anthropic', 'openrouter', 'local');
+    create type provider_key as enum ('openai', 'anthropic', 'openrouter', 'local', 'g4f');
   end if;
   if not exists (select 1 from pg_type where typname = 'agent_status') then
     create type agent_status as enum ('pending', 'provisioning', 'active', 'failed', 'paused');
