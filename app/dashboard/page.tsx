@@ -52,6 +52,12 @@ type AgentChannelState = {
   hasToken: boolean;
 };
 
+type ChannelsApiResponse = {
+  channels?: AgentChannelState[];
+  whatsappAllowlist?: string;
+  error?: string;
+};
+
 type WhatsAppChannelState = {
   enabled: boolean;
   connected: boolean;
@@ -264,6 +270,7 @@ export default function DashboardPage() {
   const [newKbTitle, setNewKbTitle] = useState<Record<string, string>>({});
   const [newKbContent, setNewKbContent] = useState<Record<string, string>>({});
   const [channelTokens, setChannelTokens] = useState<Record<string, Record<ChannelKey, string>>>({});
+  const [whatsAppAllowlistDraft, setWhatsAppAllowlistDraft] = useState<Record<string, string>>({});
   const [panelError, setPanelError] = useState<Record<string, string>>({});
   // Persona panel
   const [personaExpanded, setPersonaExpanded] = useState<Set<string>>(new Set());
@@ -388,10 +395,14 @@ export default function DashboardPage() {
     if (!user) return;
     setChannelsLoading((s) => new Set(s).add(agentId));
     const res = await fetch(`/api/agents/${agentId}/channels?email=${encodeURIComponent(user.email)}`);
-    const data = await res.json().catch(() => ({}));
+    const data = (await res.json().catch(() => ({}))) as ChannelsApiResponse;
     if (res.ok) {
       const rows = (data.channels ?? []) as AgentChannelState[];
       setAgentChannels((prev) => ({ ...prev, [agentId]: rows }));
+      setWhatsAppAllowlistDraft((prev) => ({
+        ...prev,
+        [agentId]: data.whatsappAllowlist ?? "",
+      }));
       setChannelTokens((prev) => ({
         ...prev,
         [agentId]: CHANNEL_OPTIONS.reduce<Record<ChannelKey, string>>((acc, c) => {
@@ -429,17 +440,22 @@ export default function DashboardPage() {
       enabled: row.enabled,
       token: tokens[row.channel] ?? "",
     }));
+    const whatsappAllowlist = (whatsAppAllowlistDraft[agentId] ?? "").trim();
 
     setPanelError((p) => ({ ...p, [agentId + "_channels"]: "" }));
     setChannelsLoading((s) => new Set(s).add(agentId));
     const res = await fetch(`/api/agents/${agentId}/channels`, {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ email: user.email, channels: payload }),
+      body: JSON.stringify({ email: user.email, channels: payload, whatsappAllowlist }),
     });
-    const data = await res.json().catch(() => ({}));
+    const data = (await res.json().catch(() => ({}))) as ChannelsApiResponse;
     if (res.ok) {
       setAgentChannels((prev) => ({ ...prev, [agentId]: (data.channels ?? []) as AgentChannelState[] }));
+      setWhatsAppAllowlistDraft((prev) => ({
+        ...prev,
+        [agentId]: data.whatsappAllowlist ?? "",
+      }));
       setChannelTokens((prev) => ({
         ...prev,
         [agentId]: CHANNEL_OPTIONS.reduce<Record<ChannelKey, string>>((acc, c) => {
@@ -1213,6 +1229,35 @@ export default function DashboardPage() {
                           </div>
                         );
                       })}
+                      {agentChannelRows.some((r) => r.channel === "whatsapp" && r.enabled) && (
+                        <div
+                          style={{
+                            display: "grid",
+                            gridTemplateColumns: "120px 80px 1fr",
+                            gap: 8,
+                            alignItems: "center",
+                            marginBottom: 8,
+                          }}
+                        >
+                          <strong style={{ fontSize: "0.82rem" }}>WA Allowlist</strong>
+                          <span className="muted" style={{ fontSize: "0.78rem" }}>
+                            IDs
+                          </span>
+                          <input
+                            className="auth-input"
+                            style={{ fontSize: "0.78rem", padding: "6px 10px" }}
+                            type="text"
+                            placeholder="923001234567@s.whatsapp.net,7600...@lid"
+                            value={whatsAppAllowlistDraft[agent.id] ?? ""}
+                            onChange={(e) =>
+                              setWhatsAppAllowlistDraft((prev) => ({
+                                ...prev,
+                                [agent.id]: e.target.value,
+                              }))
+                            }
+                          />
+                        </div>
+                      )}
                       <button
                         className="solid-btn"
                         style={{ fontSize: "0.8rem", padding: "6px 14px", marginTop: 4 }}
