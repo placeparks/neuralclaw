@@ -1247,7 +1247,7 @@ export default function DashboardPage() {
                             className="auth-input"
                             style={{ fontSize: "0.78rem", padding: "6px 10px" }}
                             type="text"
-                            placeholder="923001234567@s.whatsapp.net,7600...@lid"
+                            placeholder="923001234567 (auto adds @s.whatsapp.net), or full @lid"
                             value={whatsAppAllowlistDraft[agent.id] ?? ""}
                             onChange={(e) =>
                               setWhatsAppAllowlistDraft((prev) => ({

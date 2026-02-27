@@ -141,7 +141,12 @@ export async function PUT(
     const owned = await resolveOwnedAgent(params.id, body.email);
     if (!owned) return NextResponse.json({ error: "Not found or unauthorized" }, { status: 404 });
 
-    const allowlist = (body.whatsappAllowlist ?? "").trim();
+    const allowlist = (body.whatsappAllowlist ?? "")
+      .split(/[,\n]+/)
+      .map((item) => item.trim())
+      .filter(Boolean)
+      .map((item) => (item.includes("@") ? item : `${item}@s.whatsapp.net`))
+      .join(",");
 
     const supabase = getSupabaseAdmin();
     const { data: existingRows, error: existingErr } = await supabase
