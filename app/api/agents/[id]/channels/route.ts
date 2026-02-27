@@ -47,7 +47,7 @@ async function resolveOwnedAgent(agentId: string, email: string): Promise<OwnedA
 
   const { data: agent } = await supabase
     .from("agents")
-    .select("id, agent_name")
+    .select("id, agent_name, custom_env")
     .eq("id", agentId)
     .eq("user_id", user.id)
     .single();
@@ -57,6 +57,7 @@ async function resolveOwnedAgent(agentId: string, email: string): Promise<OwnedA
     userId: user.id,
     agentId: agent.id as string,
     agentName: (agent as { agent_name?: string | null }).agent_name ?? "agent",
+    customEnv: ((agent as { custom_env?: Record<string, string> | null }).custom_env ?? {}) as Record<string, string>,
   };
 }
 
