@@ -16,7 +16,6 @@ type ChannelInput = {
 type ChannelsRequestBody = {
   email?: string;
   channels?: ChannelInput[];
-  whatsappAllowlist?: string;
 };
 
 type ExistingChannel = {
@@ -32,7 +31,6 @@ type OwnedAgent = {
   userId: string;
   agentId: string;
   agentName: string;
-  customEnv: Record<string, string>;
 };
 
 async function resolveOwnedAgent(agentId: string, email: string): Promise<OwnedAgent | null> {
@@ -47,7 +45,7 @@ async function resolveOwnedAgent(agentId: string, email: string): Promise<OwnedA
 
   const { data: agent } = await supabase
     .from("agents")
-    .select("id, agent_name, custom_env")
+    .select("id, agent_name")
     .eq("id", agentId)
     .eq("user_id", user.id)
     .single();
@@ -57,7 +55,6 @@ async function resolveOwnedAgent(agentId: string, email: string): Promise<OwnedA
     userId: user.id,
     agentId: agent.id as string,
     agentName: (agent as { agent_name?: string | null }).agent_name ?? "agent",
-    customEnv: ((agent as { custom_env?: Record<string, string> | null }).custom_env ?? {}) as Record<string, string>,
   };
 }
 
@@ -99,7 +96,6 @@ export async function GET(
         enabled: enabled.has(channel),
         hasToken: enabled.has(channel),
       })),
-      whatsappAllowlist: owned.customEnv.NEURALCLAW_WHATSAPP_ALLOWED_IDS ?? "",
     });
   } catch (err) {
     return NextResponse.json(
@@ -140,13 +136,6 @@ export async function PUT(
 
     const owned = await resolveOwnedAgent(params.id, body.email);
     if (!owned) return NextResponse.json({ error: "Not found or unauthorized" }, { status: 404 });
-
-    const allowlist = (body.whatsappAllowlist ?? "")
-      .split(/[,\n]+/)
-      .map((item) => item.trim())
-      .filter(Boolean)
-      .map((item) => (item.includes("@") ? item : `${item}@s.whatsapp.net`))
-      .join(",");
 
     const supabase = getSupabaseAdmin();
     const { data: existingRows, error: existingErr } = await supabase
@@ -203,20 +192,6 @@ export async function PUT(
       if (insertErr) return NextResponse.json({ error: insertErr.message }, { status: 500 });
     }
 
-    const updatedEnv: Record<string, string> = { ...(owned.customEnv ?? {}) };
-    if (allowlist) {
-      updatedEnv.NEURALCLAW_WHATSAPP_ALLOWED_IDS = allowlist;
-    } else {
-      delete updatedEnv.NEURALCLAW_WHATSAPP_ALLOWED_IDS;
-    }
-
-    const { error: envErr } = await supabase
-      .from("agents")
-      .update({ custom_env: updatedEnv })
-      .eq("id", owned.agentId);
-
-    if (envErr) return NextResponse.json({ error: envErr.message }, { status: 500 });
-
     const syncResult = await syncAgentRuntimeEnv(owned.agentId);
 
     return NextResponse.json({
@@ -230,7 +205,6 @@ export async function PUT(
         enabled: nextRows.some((row) => row.channel === channel),
         hasToken: nextRows.some((row) => row.channel === channel),
       })),
-      whatsappAllowlist: updatedEnv.NEURALCLAW_WHATSAPP_ALLOWED_IDS ?? "",
     });
   } catch (err) {
     return NextResponse.json(
