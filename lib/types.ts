@@ -7,7 +7,7 @@ export type ChannelKey =
   | "whatsapp"
   | "signal";
 
-export type ProviderKey = "openai" | "anthropic" | "openrouter" | "local";
+export type ProviderKey = "openai" | "anthropic" | "openrouter" | "local" | "g4f";
 
 export type DeploymentRequest = {
   userEmail: string;
@@ -18,6 +18,7 @@ export type DeploymentRequest = {
   model: string;
   region: string;
   persona?: string;
+  enabledTools?: string[];
   channels: Array<{
     channel: ChannelKey;
     token: string;

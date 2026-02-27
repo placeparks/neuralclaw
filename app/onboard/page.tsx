@@ -6,6 +6,7 @@ import { getStoredUser } from "@/lib/session-client";
 import type { ChannelKey, DeploymentRequest, ProviderKey } from "@/lib/types";
 
 type ChannelConfig = { key: ChannelKey; label: string; placeholder: string };
+type SkillConfig = { key: "web" | "files" | "code" | "calendar"; label: string; tools: string[] };
 
 const PERSONAS: Array<{ key: string; label: string; preview: string }> = [
   {
@@ -65,8 +66,16 @@ const PROVIDER_MODELS: Record<ProviderKey, string[]> = {
   openai: ["gpt-4o", "gpt-4.1", "gpt-4o-mini"],
   anthropic: ["claude-sonnet-4-20250514", "claude-3-5-sonnet-latest"],
   openrouter: ["anthropic/claude-sonnet-4-20250514", "openai/gpt-4o"],
-  local: ["llama3", "mistral"]
+  local: ["llama3", "mistral"],
+  g4f: ["gpt-4o-mini", "gpt-4o", "claude-3.5-sonnet"]
 };
+
+const SKILLS: SkillConfig[] = [
+  { key: "web", label: "Web Search", tools: ["web_search", "fetch_url"] },
+  { key: "files", label: "File Ops", tools: ["read_file", "write_file", "list_directory"] },
+  { key: "code", label: "Code Exec", tools: ["execute_python"] },
+  { key: "calendar", label: "Calendar", tools: ["create_event", "list_events", "delete_event"] },
+];
 
 export default function OnboardPage() {
   const router = useRouter();
@@ -95,6 +104,12 @@ export default function OnboardPage() {
   });
   const [selectedPersonaKey, setSelectedPersonaKey] = useState<string>("");
   const [customPersona, setCustomPersona] = useState("");
+  const [enabledSkills, setEnabledSkills] = useState<Record<SkillConfig["key"], boolean>>({
+    web: true,
+    files: true,
+    code: true,
+    calendar: true,
+  });
 
   useEffect(() => {
     const user = getStoredUser();
@@ -118,10 +133,22 @@ export default function OnboardPage() {
     setError("");
     setSuccess("");
     if (!agentName.trim()) return setError("Agent name is required.");
-    if (provider !== "local" && !providerApiKey.trim()) return setError("Provider API key required.");
+    if (provider !== "local" && provider !== "g4f" && !providerApiKey.trim()) {
+      return setError("Provider API key required.");
+    }
     if (activeChannels.length === 0) return setError("Enable at least one channel.");
     const missing = activeChannels.find((c) => !tokens[c.key].trim());
     if (missing) return setError(`Token required for ${missing.label}.`);
+
+    const enabledTools = SKILLS
+      .filter((s) => enabledSkills[s.key])
+      .flatMap((s) => s.tools);
+    if (enabledTools.length === 0) {
+      return setError("Enable at least one skill.");
+    }
+
+    const allTools = SKILLS.flatMap((s) => s.tools);
+    const isAllToolsEnabled = enabledTools.length === allTools.length;
 
     const payload: DeploymentRequest = {
       userEmail: user.email,
@@ -132,6 +159,7 @@ export default function OnboardPage() {
       model,
       region,
       persona: resolvedPersona,
+      enabledTools: isAllToolsEnabled ? undefined : enabledTools,
       channels: activeChannels.map((ch) => ({ channel: ch.key, token: tokens[ch.key] }))
     };
 
@@ -181,13 +209,19 @@ export default function OnboardPage() {
             <option value="openai">OpenAI</option>
             <option value="anthropic">Anthropic</option>
             <option value="openrouter">OpenRouter</option>
+            <option value="g4f">Free Wrapper (g4f)</option>
             <option value="local">Local</option>
           </select>
-          {provider !== "local" && (
+          {provider !== "local" && provider !== "g4f" && (
             <>
               <label className="label">API key</label>
               <input className="input" type="password" value={providerApiKey} onChange={(e) => setProviderApiKey(e.target.value)} />
             </>
+          )}
+          {provider === "g4f" && (
+            <p className="muted" style={{ fontSize: "0.78rem", margin: "8px 0 0" }}>
+              g4f mode does not require a provider API key.
+            </p>
           )}
           <label className="label">Model</label>
           <select className="select" value={model} onChange={(e) => setModel(e.target.value)}>
@@ -230,6 +264,25 @@ export default function OnboardPage() {
               onChange={(e) => setCustomPersona(e.target.value)}
             />
           )}
+
+          <label className="label" style={{ marginTop: 16 }}>Skills</label>
+          <div style={{ display: "grid", gap: 6 }}>
+            {SKILLS.map((skill) => (
+              <label
+                key={skill.key}
+                style={{ display: "inline-flex", alignItems: "center", gap: 8, fontSize: "0.82rem" }}
+              >
+                <input
+                  type="checkbox"
+                  checked={enabledSkills[skill.key]}
+                  onChange={(e) =>
+                    setEnabledSkills((prev) => ({ ...prev, [skill.key]: e.target.checked }))
+                  }
+                />
+                {skill.label}
+              </label>
+            ))}
+          </div>
         </div>
 
         <div className="card">

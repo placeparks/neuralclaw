@@ -6,7 +6,7 @@ type DeploymentRow = {
   id: string;
   user_id: string;
   agent_name: string;
-  provider: "openai" | "anthropic" | "openrouter" | "local";
+  provider: "openai" | "anthropic" | "openrouter" | "local" | "g4f";
   provider_api_key_encrypted: string | null;
   model: string;
   plan: "monthly" | "yearly";

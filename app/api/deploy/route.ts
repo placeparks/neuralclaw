@@ -12,7 +12,7 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "Missing required fields." }, { status: 400 });
     }
 
-    if (body.provider !== "local" && !body.providerApiKey) {
+    if (body.provider !== "local" && body.provider !== "g4f" && !body.providerApiKey) {
       return NextResponse.json({ error: "Provider API key is required for hosted models." }, { status: 400 });
     }
 
@@ -50,6 +50,12 @@ export async function POST(req: Request) {
       userId = createUser.data.id;
     }
 
+    const allowedTools = (body.enabledTools ?? []).filter((t) => typeof t === "string" && t.trim().length > 0);
+    const customEnv: Record<string, string> = {};
+    if (allowedTools.length > 0) {
+      customEnv.NEURALCLAW_ALLOWED_TOOLS = allowedTools.join(",");
+    }
+
     const { data: deployment, error: deployErr } = await supabase
       .from("agents")
       .insert({
@@ -61,6 +67,7 @@ export async function POST(req: Request) {
         model: body.model,
         region: body.region,
         persona: body.persona?.trim() || null,
+        custom_env: customEnv,
         status: "pending",
         error_message: null
       })
