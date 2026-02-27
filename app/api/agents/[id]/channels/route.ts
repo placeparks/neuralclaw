@@ -28,7 +28,14 @@ function isChannelKey(value: string): value is ChannelKey {
   return (ALLOWED_CHANNELS as string[]).includes(value);
 }
 
-async function resolveOwnedAgent(agentId: string, email: string) {
+type OwnedAgent = {
+  userId: string;
+  agentId: string;
+  agentName: string;
+  customEnv: Record<string, string>;
+};
+
+async function resolveOwnedAgent(agentId: string, email: string): Promise<OwnedAgent | null> {
   const supabase = getSupabaseAdmin();
   const { data: user } = await supabase
     .from("app_users")
