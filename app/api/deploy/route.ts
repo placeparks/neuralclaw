@@ -66,6 +66,9 @@ export async function POST(req: Request) {
       customEnv.TWILIO_ACCOUNT_SID = body.voice.accountSid;
       customEnv.TWILIO_AUTH_TOKEN = body.voice.authToken;
       customEnv.TWILIO_PHONE_NUMBER = body.voice.phoneNumber;
+      if (body.voice.voicePersona?.trim()) {
+        customEnv.NEURALCLAW_VOICE_PERSONA = body.voice.voicePersona.trim();
+      }
     }
     if (hasExplicitToolSelection && allowedTools.length > 0) {
       customEnv.NEURALCLAW_ALLOWED_TOOLS = allowedTools.join(",");

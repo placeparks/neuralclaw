@@ -116,6 +116,7 @@ export default function OnboardPage() {
   const [voiceAuthToken, setVoiceAuthToken] = useState("");
   const [voicePhoneNumber, setVoicePhoneNumber] = useState("");
   const [voiceRequireConfirmation, setVoiceRequireConfirmation] = useState(true);
+  const [voicePersona, setVoicePersona] = useState("");
 
   useEffect(() => {
     const user = getStoredUser();
@@ -178,6 +179,7 @@ export default function OnboardPage() {
         authToken: voiceAuthToken.trim(),
         phoneNumber: voicePhoneNumber.trim(),
         requireConfirmation: voiceRequireConfirmation,
+        voicePersona: voicePersona.trim() || undefined,
       } : undefined,
       channels: activeChannels.map((ch) => ({ channel: ch.key, token: tokens[ch.key] }))
     };
@@ -338,6 +340,16 @@ export default function OnboardPage() {
                   placeholder="+15551234567"
                   value={voicePhoneNumber}
                   onChange={(e) => setVoicePhoneNumber(e.target.value)}
+                />
+                <label className="label" style={{ marginTop: 4 }}>
+                  Call behavior <span className="muted" style={{ fontSize: "0.78rem", fontWeight: 400 }}>(optional)</span>
+                </label>
+                <textarea
+                  className="input"
+                  style={{ minHeight: 72, resize: "vertical", fontSize: "0.82rem", fontFamily: "var(--font-mono, monospace)" }}
+                  placeholder="e.g. You are a professional appointment scheduler. Confirm or reschedule meetings calmly and clearly."
+                  value={voicePersona}
+                  onChange={(e) => setVoicePersona(e.target.value)}
                 />
                 <label
                   style={{ display: "inline-flex", alignItems: "center", gap: 8, fontSize: "0.82rem" }}

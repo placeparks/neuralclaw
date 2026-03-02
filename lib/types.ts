@@ -18,6 +18,7 @@ export type VoiceConfig = {
   authToken?: string;
   phoneNumber?: string;
   requireConfirmation?: boolean;
+  voicePersona?: string;
 };
 
 export type DeploymentRequest = {
