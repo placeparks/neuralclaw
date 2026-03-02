@@ -117,6 +117,7 @@ export default function OnboardPage() {
   const [voicePhoneNumber, setVoicePhoneNumber] = useState("");
   const [voiceRequireConfirmation, setVoiceRequireConfirmation] = useState(true);
   const [voicePersona, setVoicePersona] = useState("");
+  const [voiceOpenAiKey, setVoiceOpenAiKey] = useState("");
 
   useEffect(() => {
     const user = getStoredUser();
@@ -180,6 +181,7 @@ export default function OnboardPage() {
         phoneNumber: voicePhoneNumber.trim(),
         requireConfirmation: voiceRequireConfirmation,
         voicePersona: voicePersona.trim() || undefined,
+        openAiKey: voiceOpenAiKey.trim() || undefined,
       } : undefined,
       channels: activeChannels.map((ch) => ({ channel: ch.key, token: tokens[ch.key] }))
     };
@@ -322,6 +324,16 @@ export default function OnboardPage() {
                 <select className="select" value={voiceProvider} onChange={(e) => setVoiceProvider(e.target.value as VoiceProviderKey)}>
                   <option value="twilio">Twilio Voice</option>
                 </select>
+                <input
+                  className="input"
+                  type="password"
+                  placeholder="OpenAI API key (for natural voice — gpt-4o-realtime)"
+                  value={voiceOpenAiKey}
+                  onChange={(e) => setVoiceOpenAiKey(e.target.value)}
+                />
+                <p className="muted" style={{ fontSize: "0.78rem", margin: "0 0 4px" }}>
+                  If left blank and your agent provider is OpenAI, the provider key is reused.
+                </p>
                 <input
                   className="input"
                   placeholder="Twilio Account SID"

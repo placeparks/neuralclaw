@@ -69,6 +69,9 @@ export async function POST(req: Request) {
       if (body.voice.voicePersona?.trim()) {
         customEnv.NEURALCLAW_VOICE_PERSONA = body.voice.voicePersona.trim();
       }
+      if (body.voice.openAiKey?.trim()) {
+        customEnv.NEURALCLAW_VOICE_OPENAI_KEY = body.voice.openAiKey.trim();
+      }
     }
     if (hasExplicitToolSelection && allowedTools.length > 0) {
       customEnv.NEURALCLAW_ALLOWED_TOOLS = allowedTools.join(",");

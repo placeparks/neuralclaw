@@ -19,6 +19,7 @@ export type VoiceConfig = {
   phoneNumber?: string;
   requireConfirmation?: boolean;
   voicePersona?: string;
+  openAiKey?: string;
 };
 
 export type DeploymentRequest = {
