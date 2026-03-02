@@ -9,6 +9,17 @@ export type ChannelKey =
 
 export type ProviderKey = "openai" | "anthropic" | "openrouter" | "local" | "g4f";
 
+export type VoiceProviderKey = "twilio";
+
+export type VoiceConfig = {
+  enabled: boolean;
+  provider: VoiceProviderKey;
+  accountSid?: string;
+  authToken?: string;
+  phoneNumber?: string;
+  requireConfirmation?: boolean;
+};
+
 export type DeploymentRequest = {
   userEmail: string;
   agentName: string;
@@ -19,6 +30,7 @@ export type DeploymentRequest = {
   region: string;
   persona?: string;
   enabledTools?: string[];
+  voice?: VoiceConfig;
   channels: Array<{
     channel: ChannelKey;
     token: string;

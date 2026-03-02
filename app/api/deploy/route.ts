@@ -50,9 +50,24 @@ export async function POST(req: Request) {
       userId = createUser.data.id;
     }
 
+    const hasExplicitToolSelection = Array.isArray(body.enabledTools);
     const allowedTools = (body.enabledTools ?? []).filter((t) => typeof t === "string" && t.trim().length > 0);
     const customEnv: Record<string, string> = {};
-    if (allowedTools.length > 0) {
+    if (body.voice?.enabled) {
+      if (hasExplicitToolSelection && !allowedTools.includes("place_call")) {
+        allowedTools.push("place_call");
+      }
+      if (!body.voice.accountSid || !body.voice.authToken || !body.voice.phoneNumber) {
+        return NextResponse.json({ error: "Voice Agent requires complete telephony credentials." }, { status: 400 });
+      }
+      customEnv.NEURALCLAW_VOICE_ENABLED = "true";
+      customEnv.NEURALCLAW_VOICE_PROVIDER = body.voice.provider;
+      customEnv.NEURALCLAW_VOICE_REQUIRE_CONFIRM = body.voice.requireConfirmation === false ? "false" : "true";
+      customEnv.TWILIO_ACCOUNT_SID = body.voice.accountSid;
+      customEnv.TWILIO_AUTH_TOKEN = body.voice.authToken;
+      customEnv.TWILIO_PHONE_NUMBER = body.voice.phoneNumber;
+    }
+    if (hasExplicitToolSelection && allowedTools.length > 0) {
       customEnv.NEURALCLAW_ALLOWED_TOOLS = allowedTools.join(",");
     }
 

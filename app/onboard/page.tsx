@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { getStoredUser } from "@/lib/session-client";
-import type { ChannelKey, DeploymentRequest, ProviderKey } from "@/lib/types";
+import type { ChannelKey, DeploymentRequest, ProviderKey, VoiceProviderKey } from "@/lib/types";
 
 type ChannelConfig = { key: ChannelKey; label: string; placeholder: string };
 type SkillConfig = { key: "web" | "files" | "code" | "calendar"; label: string; tools: string[] };
@@ -110,6 +110,12 @@ export default function OnboardPage() {
     code: true,
     calendar: true,
   });
+  const [voiceEnabled, setVoiceEnabled] = useState(false);
+  const [voiceProvider, setVoiceProvider] = useState<VoiceProviderKey>("twilio");
+  const [voiceAccountSid, setVoiceAccountSid] = useState("");
+  const [voiceAuthToken, setVoiceAuthToken] = useState("");
+  const [voicePhoneNumber, setVoicePhoneNumber] = useState("");
+  const [voiceRequireConfirmation, setVoiceRequireConfirmation] = useState(true);
 
   useEffect(() => {
     const user = getStoredUser();
@@ -146,6 +152,11 @@ export default function OnboardPage() {
     if (enabledTools.length === 0) {
       return setError("Enable at least one skill.");
     }
+    if (voiceEnabled) {
+      if (!voiceAccountSid.trim() || !voiceAuthToken.trim() || !voicePhoneNumber.trim()) {
+        return setError("Voice Agent requires Twilio Account SID, Auth Token, and outbound number.");
+      }
+    }
 
     const allTools = SKILLS.flatMap((s) => s.tools);
     const isAllToolsEnabled = enabledTools.length === allTools.length;
@@ -160,6 +171,14 @@ export default function OnboardPage() {
       region,
       persona: resolvedPersona,
       enabledTools: isAllToolsEnabled ? undefined : enabledTools,
+      voice: voiceEnabled ? {
+        enabled: true,
+        provider: voiceProvider,
+        accountSid: voiceAccountSid.trim(),
+        authToken: voiceAuthToken.trim(),
+        phoneNumber: voicePhoneNumber.trim(),
+        requireConfirmation: voiceRequireConfirmation,
+      } : undefined,
       channels: activeChannels.map((ch) => ({ channel: ch.key, token: tokens[ch.key] }))
     };
 
@@ -282,6 +301,59 @@ export default function OnboardPage() {
                 {skill.label}
               </label>
             ))}
+          </div>
+
+          <label className="label" style={{ marginTop: 16 }}>Voice Agent</label>
+          <div style={{ display: "grid", gap: 10 }}>
+            <label
+              style={{ display: "inline-flex", alignItems: "center", gap: 8, fontSize: "0.82rem" }}
+            >
+              <input
+                type="checkbox"
+                checked={voiceEnabled}
+                onChange={(e) => setVoiceEnabled(e.target.checked)}
+              />
+              Enable AI phone calling
+            </label>
+            {voiceEnabled && (
+              <>
+                <select className="select" value={voiceProvider} onChange={(e) => setVoiceProvider(e.target.value as VoiceProviderKey)}>
+                  <option value="twilio">Twilio Voice</option>
+                </select>
+                <input
+                  className="input"
+                  placeholder="Twilio Account SID"
+                  value={voiceAccountSid}
+                  onChange={(e) => setVoiceAccountSid(e.target.value)}
+                />
+                <input
+                  className="input"
+                  type="password"
+                  placeholder="Twilio Auth Token"
+                  value={voiceAuthToken}
+                  onChange={(e) => setVoiceAuthToken(e.target.value)}
+                />
+                <input
+                  className="input"
+                  placeholder="+15551234567"
+                  value={voicePhoneNumber}
+                  onChange={(e) => setVoicePhoneNumber(e.target.value)}
+                />
+                <label
+                  style={{ display: "inline-flex", alignItems: "center", gap: 8, fontSize: "0.82rem" }}
+                >
+                  <input
+                    type="checkbox"
+                    checked={voiceRequireConfirmation}
+                    onChange={(e) => setVoiceRequireConfirmation(e.target.checked)}
+                  />
+                  Require explicit confirmation before each call
+                </label>
+                <p className="muted" style={{ fontSize: "0.78rem", margin: 0 }}>
+                  This enables call capability wiring. Live two-way AI calling still requires a telephony execution path in the runtime.
+                </p>
+              </>
+            )}
           </div>
         </div>
 
