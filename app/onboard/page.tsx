@@ -284,7 +284,7 @@ export default function OnboardPage() {
         <div className="card">
           <h2>Agent Setup</h2>
           <label className="label">Agent name</label>
-          <input className="input" value={agentName} onChange={(e) => setAgentName(e.target.value)} />
+          <input className="input" autoComplete="off" placeholder="e.g. Sales Bot" value={agentName} onChange={(e) => setAgentName(e.target.value)} />
           <label className="label">Plan</label>
           <div className="plan-row">
             <button className={`plan ${plan === "monthly" ? "active" : ""}`} onClick={() => setPlan("monthly")}>Monthly</button>
