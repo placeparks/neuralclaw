@@ -139,13 +139,12 @@ const SKILLS: SkillConfig[] = [
 
 export default function OnboardPage() {
   const router = useRouter();
-  const [agentName, setAgentName] = useState("Joker");
+  const [agentName, setAgentName] = useState("");
   const [plan, setPlan] = useState<"monthly" | "yearly">("monthly");
   const [provider, setProvider] = useState<ProviderKey>("openai");
   const [providerApiKey, setProviderApiKey] = useState("");
   const [proxyBaseUrl, setProxyBaseUrl] = useState("");
   const [model, setModel] = useState(PROVIDER_MODELS.openai[0]);
-  const [region, setRegion] = useState("us-east-1");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
@@ -236,7 +235,7 @@ export default function OnboardPage() {
       provider,
       providerApiKey,
       model,
-      region,
+      region: "us-east-1",
       persona: resolvedPersona,
       enabledTools: isAllToolsEnabled ? undefined : enabledTools,
       featureFlags,
@@ -367,13 +366,6 @@ export default function OnboardPage() {
           <select className="select" value={model} onChange={(e) => setModel(e.target.value)}>
             {PROVIDER_MODELS[provider].map((m) => <option key={m}>{m}</option>)}
           </select>
-          <label className="label">Region</label>
-          <select className="select" value={region} onChange={(e) => setRegion(e.target.value)}>
-            <option value="us-east-1">US East</option>
-            <option value="us-west-1">US West</option>
-            <option value="eu-west-1">EU West</option>
-          </select>
-
           <label className="label" style={{ marginTop: 16 }}>
             Personality <span className="muted" style={{ fontSize: "0.78rem", fontWeight: 400 }}>(optional)</span>
           </label>

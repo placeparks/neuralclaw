@@ -23,6 +23,20 @@
 
 /* ─── Reset ───────────────────────────────────────────────────── */
 *, *::before, *::after { box-sizing: border-box; }
+
+/* Thin themed scrollbar — replaces the browser default fat scrollbar */
+html {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 149, 0, 0.18) transparent;
+}
+::-webkit-scrollbar { width: 4px; height: 4px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb {
+  background: rgba(255, 149, 0, 0.18);
+  border-radius: 2px;
+}
+::-webkit-scrollbar-thumb:hover { background: rgba(255, 149, 0, 0.35); }
+
 html, body {
   margin: 0;
   min-height: 100%;
