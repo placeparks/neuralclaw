@@ -216,7 +216,8 @@ export default function LandingPage() {
               SELF-EVOLVING AI &nbsp;•&nbsp;
               RAILWAY CLOUD DEPLOY &nbsp;•&nbsp;
               REAL-TIME AUDIT LOG &nbsp;•&nbsp;
-              SKILL MARKETPLACE &nbsp;•&nbsp;
+              AI VOICE CALLING &nbsp;•&nbsp;
+              KNOWLEDGE BASE &nbsp;•&nbsp;
               SWARM CONSENSUS &nbsp;•&nbsp;
             </span>
           ))}
@@ -302,10 +303,12 @@ export default function LandingPage() {
         <h2 className="land-section-title" style={{ marginBottom: 40 }}>Everything built in.</h2>
         <div className="land-feature-row">
           {[
-            { label: "6 Channels", desc: "Telegram, Discord, Slack, WhatsApp, Signal, Web Chat" },
-            { label: "4 Providers", desc: "OpenAI, Anthropic, OpenRouter, Local Ollama — with circuit breaker fallback" },
+            { label: "6 Channels", desc: "Telegram, Discord, Slack, WhatsApp, Signal, Web Chat — all adapters built-in" },
+            { label: "7 Providers", desc: "OpenAI, Anthropic, OpenRouter, Local Ollama, g4f, ChatGPT Session, Claude Session — no API key required for session providers" },
             { label: "Railway Deploy", desc: "One-click cloud provisioning, env injection, live status tracking" },
-            { label: "Zero-Trust", desc: "Pre-LLM screening, policy engine, audit logs, OS keychain for keys" },
+            { label: "Zero-Trust", desc: "Pre-LLM threat screening, policy engine, full audit trail, secrets redacted" },
+            { label: "AI Voice Calling", desc: "Twilio-powered outbound AI calls, configurable call persona, confirmation flow" },
+            { label: "10 Personalities", desc: "Coder, Marketing Agent, Sales Agent, Support Agent, Research Agent, Analyst and more — or write your own" },
           ].map((f) => (
             <div key={f.label} className="land-feat-tile">
               <h4>{f.label}</h4>
@@ -334,7 +337,7 @@ export default function LandingPage() {
       {/* ── Footer ── */}
       <footer className="land-footer">
         <span>© 2026 NeuralClaw · MIT License</span>
-        <span className="land-footer-tag">v0.4.0</span>
+        <span className="land-footer-tag">v0.5.3</span>
       </footer>
     </div>
   );
