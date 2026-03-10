@@ -72,7 +72,7 @@ const CHANNEL_OPTIONS: Array<{ key: ChannelKey; label: string; placeholder: stri
   { key: "telegram", label: "Telegram", placeholder: "123456:ABC..." },
   { key: "discord", label: "Discord", placeholder: "Discord bot token" },
   { key: "slack", label: "Slack", placeholder: "xoxb-...|xapp-..." },
-  { key: "whatsapp", label: "WhatsApp", placeholder: "Session id" },
+  { key: "whatsapp", label: "WhatsApp", placeholder: "Session name (e.g. myagent)" },
   { key: "signal", label: "Signal", placeholder: "+1234567890" },
 ];
 
