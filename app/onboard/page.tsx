@@ -458,9 +458,13 @@ function OnboardPageInner() {
                   Credential captured. You can proceed to deploy, or reconnect to replace it.
                 </p>
               ) : (
+                <>
+                  {/* eslint-disable react/no-unescaped-entities */}
                 <p className="muted" style={{ fontSize: "0.75rem", margin: "6px 0 0" }}>
                   Click below — you'll be sent to OpenAI to approve access and automatically redirected back here.
                 </p>
+                  {/* eslint-enable react/no-unescaped-entities */}
+                </>
               )}
               <div style={{ marginTop: 10, display: "grid", gap: 8 }}>
                 <button type="button" className="solid-btn" onClick={startChatGPTAuth} disabled={authAssistantBusy}>
