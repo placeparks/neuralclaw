@@ -411,8 +411,6 @@ export default function OnboardPage() {
             <option value="venice">Venice API</option>
             <option value="chatgpt_token">ChatGPT (Session / OAuth)</option>
             <option value="claude_token">Claude (Session / OAuth)</option>
-            <option value="chatgpt_session">ChatGPT (Session — no API key)</option>
-            <option value="claude_session">Claude (Session — no API key)</option>
             <option value="g4f">Free Wrapper (g4f)</option>
             <option value="local">Local (Ollama)</option>
           </select>
