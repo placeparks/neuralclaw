@@ -4,6 +4,30 @@ import { encryptToken } from "@/lib/token-crypto";
 import { runProvision } from "@/lib/provisioner";
 import type { DeploymentRequest } from "@/lib/types";
 
+function validateChannelToken(channel: string, token: string): string | null {
+  const trimmed = token.trim();
+  if (!trimmed) return `Token is required for ${channel}.`;
+
+  if (channel === "slack") {
+    const parts = trimmed.split("|").map((v) => v.trim()).filter(Boolean);
+    if (parts.length !== 2) {
+      return "Slack requires both tokens in the format xoxb-...|xapp-....";
+    }
+    if (!parts[0].startsWith("xoxb-")) {
+      return "Slack bot token must start with xoxb-.";
+    }
+    if (!parts[1].startsWith("xapp-")) {
+      return "Slack app token must start with xapp-.";
+    }
+  }
+
+  if (channel === "discord" && /\s/.test(trimmed)) {
+    return "Discord bot token must not contain spaces.";
+  }
+
+  return null;
+}
+
 export async function POST(req: Request) {
   try {
     const body = (await req.json()) as DeploymentRequest;
@@ -22,6 +46,13 @@ export async function POST(req: Request) {
 
     if (!Array.isArray(body.channels) || body.channels.length === 0) {
       return NextResponse.json({ error: "At least one channel is required." }, { status: 400 });
+    }
+
+    for (const channel of body.channels) {
+      const validationError = validateChannelToken(channel.channel, channel.token ?? "");
+      if (validationError) {
+        return NextResponse.json({ error: validationError }, { status: 400 });
+      }
     }
 
     const supabase = getSupabaseAdmin();

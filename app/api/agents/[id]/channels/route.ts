@@ -23,6 +23,30 @@ type ExistingChannel = {
   token_encrypted: string;
 };
 
+function validateChannelToken(channel: ChannelKey, token: string): string | null {
+  const trimmed = token.trim();
+  if (!trimmed) return `token required for channel '${channel}'`;
+
+  if (channel === "slack") {
+    const parts = trimmed.split("|").map((v) => v.trim()).filter(Boolean);
+    if (parts.length !== 2) {
+      return "Slack requires both tokens in the format xoxb-...|xapp-....";
+    }
+    if (!parts[0].startsWith("xoxb-")) {
+      return "Slack bot token must start with xoxb-.";
+    }
+    if (!parts[1].startsWith("xapp-")) {
+      return "Slack app token must start with xapp-.";
+    }
+  }
+
+  if (channel === "discord" && /\s/.test(trimmed)) {
+    return "Discord bot token must not contain spaces.";
+  }
+
+  return null;
+}
+
 function isChannelKey(value: string): value is ChannelKey {
   return (ALLOWED_CHANNELS as string[]).includes(value);
 }
@@ -159,6 +183,13 @@ export async function PUT(
 
       if (!token && row.channel === "whatsapp" && !existing) {
         token = autoWhatsAppToken;
+      }
+
+      if (token) {
+        const validationError = validateChannelToken(row.channel, token);
+        if (validationError) {
+          return NextResponse.json({ error: validationError }, { status: 400 });
+        }
       }
 
       const tokenEncrypted = token ? encryptToken(token) : existing;
