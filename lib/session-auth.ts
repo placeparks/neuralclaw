@@ -16,6 +16,8 @@ export type OAuthCredentialPayload = {
   provider: "chatgpt" | "claude";
 };
 
+export type SessionConnectProvider = "chatgpt" | "claude";
+
 const FLOW_TTL_MS = 15 * 60 * 1000;
 const OPENAI_CLIENT_ID = "app_EMoamEEZ73f0CkXaXp7hrann";
 const OPENAI_AUTH_URL = "https://auth.openai.com/oauth/authorize";
@@ -49,19 +51,31 @@ function signFlowPayload(payload: string): string {
   return base64urlEncode(createHmac("sha256", requireSecret()).update(payload).digest());
 }
 
+export function createSessionConnectSecret(): string {
+  return base64urlEncode(randomBytes(24));
+}
+
+export function hashSessionConnectSecret(secret: string): string {
+  return createHash("sha256").update(`${requireSecret()}:${secret}`).digest("hex");
+}
+
+export function timingSafeSecretMatch(secret: string, hash: string): boolean {
+  return hashSessionConnectSecret(secret) === hash;
+}
+
 function buildCodeChallenge(verifier: string): string {
   return base64urlEncode(createHash("sha256").update(verifier).digest());
 }
 
-export function createChatGPTFlow(): { authUrl: string; flowToken: string; redirectUri: string } {
+export function createChatGPTFlow(redirectUri?: string): { authUrl: string; flowToken: string; redirectUri: string } {
   const state = base64urlEncode(randomBytes(24));
   const codeVerifier = base64urlEncode(randomBytes(48));
-  const redirectUri = OPENAI_REDIRECT_URI;
+  const effectiveRedirectUri = redirectUri || OPENAI_REDIRECT_URI;
 
   const payloadObj: ChatGPTFlowState = {
     provider: "chatgpt",
     state,
-    redirectUri,
+    redirectUri: effectiveRedirectUri,
     codeVerifier,
     issuedAt: Date.now(),
   };
@@ -73,7 +87,7 @@ export function createChatGPTFlow(): { authUrl: string; flowToken: string; redir
   const params = new URLSearchParams({
     response_type: "code",
     client_id: OPENAI_CLIENT_ID,
-    redirect_uri: redirectUri,
+    redirect_uri: effectiveRedirectUri,
     scope: OPENAI_SCOPE,
     code_challenge: buildCodeChallenge(codeVerifier),
     code_challenge_method: "S256",
@@ -83,7 +97,7 @@ export function createChatGPTFlow(): { authUrl: string; flowToken: string; redir
   return {
     authUrl: `${OPENAI_AUTH_URL}?${params.toString()}`,
     flowToken,
-    redirectUri,
+    redirectUri: effectiveRedirectUri,
   };
 }
 

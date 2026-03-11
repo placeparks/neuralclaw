@@ -1,7 +1,7 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
-import { useRouter } from "next/navigation";
+import { Suspense, useEffect, useMemo, useRef, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { getStoredUser } from "@/lib/session-client";
 import type { ChannelKey, DeploymentRequest, FeatureFlags, ProviderKey, VoiceProviderKey } from "@/lib/types";
 
@@ -165,8 +165,9 @@ const SKILLS: SkillConfig[] = [
   { key: "calendar", label: "Calendar", tools: ["create_event", "list_events", "delete_event"] },
 ];
 
-export default function OnboardPage() {
+function OnboardPageInner() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const [agentName, setAgentName] = useState("");
   const [plan, setPlan] = useState<"monthly" | "yearly">("monthly");
   const [provider, setProvider] = useState<ProviderKey>("openai");
@@ -214,6 +215,8 @@ export default function OnboardPage() {
   const [authAssistantBusy, setAuthAssistantBusy] = useState(false);
   const [authAssistantError, setAuthAssistantError] = useState("");
   const [authAssistantSuccess, setAuthAssistantSuccess] = useState("");
+  const [chatgptManualFallback, setChatgptManualFallback] = useState(false);
+  const chatgptCredFetched = useRef(false);
 
   useEffect(() => {
     const user = getStoredUser();
@@ -227,7 +230,42 @@ export default function OnboardPage() {
     setAuthAssistantInput("");
     setAuthAssistantError("");
     setAuthAssistantSuccess("");
+    setChatgptManualFallback(false);
   }, [provider]);
+
+  // Handle automatic ChatGPT OAuth return
+  useEffect(() => {
+    const connected = searchParams.get("chatgpt_connected");
+    const oauthError = searchParams.get("chatgpt_error");
+    if (!connected && !oauthError) return;
+    if (chatgptCredFetched.current) return;
+    chatgptCredFetched.current = true;
+
+    // Clean up URL params without re-render loop
+    const cleanUrl = window.location.pathname;
+    window.history.replaceState(null, "", cleanUrl);
+
+    if (oauthError) {
+      setProvider("chatgpt_token");
+      setAuthAssistantError(decodeURIComponent(oauthError));
+      return;
+    }
+
+    setProvider("chatgpt_token");
+    setModel(PROVIDER_MODELS.chatgpt_token[0]);
+    setAuthAssistantBusy(true);
+    fetch("/api/session-auth/chatgpt/credential")
+      .then(async (res) => {
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || "Failed to retrieve credential.");
+        setProviderApiKey(data.credential);
+        setAuthAssistantSuccess("ChatGPT connected. Credential ready — complete setup below.");
+      })
+      .catch((e) => {
+        setAuthAssistantError(e instanceof Error ? e.message : "Failed to retrieve credential.");
+      })
+      .finally(() => setAuthAssistantBusy(false));
+  }, [searchParams]);
 
   const isTokenProvider = provider === "chatgpt_token" || provider === "claude_token";
 
@@ -324,14 +362,15 @@ export default function OnboardPage() {
       const res = await fetch("/api/session-auth/chatgpt/start", { method: "POST" });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Failed to start ChatGPT auth.");
+      // Store flowToken + URL for manual fallback, then redirect browser to OpenAI
       setAuthFlowToken(data.flowToken);
       setAuthFlowUrl(data.authUrl);
-      setAuthAssistantSuccess("Open the auth URL, finish login, then paste the localhost callback URL below.");
+      window.location.href = data.authUrl;
     } catch (e) {
-      setAuthAssistantError(e instanceof Error ? e.message : "Unexpected error");
-    } finally {
       setAuthAssistantBusy(false);
+      setAuthAssistantError(e instanceof Error ? e.message : "Unexpected error");
     }
+    // Note: don't reset busy — page is navigating away
   }
 
   async function finishChatGPTAuth() {
@@ -414,46 +453,66 @@ export default function OnboardPage() {
           {provider === "chatgpt_token" && (
             <div style={{ margin: "10px 0 4px", padding: "10px 12px", background: "var(--surface-alt, rgba(255,255,255,0.04))", borderRadius: 6, border: "1px solid var(--border, #30363d)" }}>
               <div style={{ fontSize: "0.8rem", fontWeight: 600 }}>Connect ChatGPT</div>
-              <p className="muted" style={{ fontSize: "0.75rem", margin: "6px 0 0" }}>
-                Fastest path: click the button, open the link in the same browser where ChatGPT is already logged in, then paste the localhost callback URL back here.
-              </p>
-              <p className="muted" style={{ fontSize: "0.75rem", margin: "6px 0 0" }}>
-                Prefer straight copy-paste? Use the <a href="/downloads/neuralclaw-session-helper.zip" style={{ color: "var(--accent, #58a6ff)" }}>NeuralClaw Session Helper</a> to copy the ChatGPT session from this browser.
-              </p>
+              {providerApiKey ? (
+                <p className="muted" style={{ fontSize: "0.75rem", margin: "6px 0 0" }}>
+                  Credential captured. You can proceed to deploy, or reconnect to replace it.
+                </p>
+              ) : (
+                <p className="muted" style={{ fontSize: "0.75rem", margin: "6px 0 0" }}>
+                  Click below — you'll be sent to OpenAI to approve access and automatically redirected back here.
+                </p>
+              )}
               <div style={{ marginTop: 10, display: "grid", gap: 8 }}>
                 <button type="button" className="solid-btn" onClick={startChatGPTAuth} disabled={authAssistantBusy}>
-                  {authAssistantBusy ? "Preparing..." : "Connect ChatGPT in Browser"}
+                  {authAssistantBusy ? "Redirecting to OpenAI..." : providerApiKey ? "Reconnect ChatGPT" : "Connect ChatGPT"}
                 </button>
-                {authFlowUrl && (
+
+                {/* Manual fallback toggle */}
+                <button
+                  type="button"
+                  style={{ background: "none", border: "none", cursor: "pointer", color: "var(--muted, #8b949e)", fontSize: "0.74rem", padding: 0, textAlign: "left" }}
+                  onClick={() => setChatgptManualFallback((v) => !v)}
+                >
+                  {chatgptManualFallback ? "▼" : "▶"} Automatic redirect not working? Use manual fallback
+                </button>
+
+                {chatgptManualFallback && (
                   <>
-                    <label className="label">1. Open this link</label>
-                    <textarea
+                    <p className="muted" style={{ fontSize: "0.74rem", margin: 0 }}>
+                      1. Click <strong>Connect ChatGPT</strong> above — if the auto-redirect fails, copy the auth URL shown, open it in the browser where ChatGPT is logged in, then paste the resulting callback URL below.
+                    </p>
+                    {authFlowUrl && (
+                      <>
+                        <label className="label">Auth URL (open in ChatGPT browser)</label>
+                        <textarea
+                          className="input"
+                          style={{ minHeight: 60, resize: "vertical", fontSize: "0.75rem", fontFamily: "var(--font-mono, monospace)" }}
+                          readOnly
+                          value={authFlowUrl}
+                        />
+                        <label className="label">Paste the callback URL</label>
+                        <textarea
+                          className="input"
+                          style={{ minHeight: 60, resize: "vertical", fontSize: "0.75rem", fontFamily: "var(--font-mono, monospace)" }}
+                          placeholder="http://localhost:1455/callback?code=...&state=..."
+                          value={authCallbackUrl}
+                          onChange={(e) => setAuthCallbackUrl(e.target.value)}
+                        />
+                        <button type="button" className="solid-btn" onClick={finishChatGPTAuth} disabled={authAssistantBusy || !authFlowToken || !authCallbackUrl.trim()}>
+                          {authAssistantBusy ? "Exchanging..." : "Finish ChatGPT Connection"}
+                        </button>
+                      </>
+                    )}
+                    <label className="label" style={{ marginTop: 4 }}>Or paste a credential directly</label>
+                    <input
                       className="input"
-                      style={{ minHeight: 70, resize: "vertical", fontSize: "0.78rem", fontFamily: "var(--font-mono, monospace)" }}
-                      readOnly
-                      value={authFlowUrl}
+                      type="password"
+                      placeholder={TOKEN_GUIDES.chatgpt_token.placeholder}
+                      value={providerApiKey}
+                      onChange={(e) => setProviderApiKey(e.target.value)}
                     />
-                    <label className="label">2. Paste the localhost callback URL</label>
-                    <textarea
-                      className="input"
-                      style={{ minHeight: 70, resize: "vertical", fontSize: "0.78rem", fontFamily: "var(--font-mono, monospace)" }}
-                      placeholder="http://localhost:1455/callback?code=...&state=..."
-                      value={authCallbackUrl}
-                      onChange={(e) => setAuthCallbackUrl(e.target.value)}
-                    />
-                    <button type="button" className="solid-btn" onClick={finishChatGPTAuth} disabled={authAssistantBusy || !authFlowToken || !authCallbackUrl.trim()}>
-                      {authAssistantBusy ? "Exchanging..." : "Finish ChatGPT Connection"}
-                    </button>
                   </>
                 )}
-                <label className="label" style={{ marginTop: 4 }}>Already have a ChatGPT session credential?</label>
-                <input
-                  className="input"
-                  type="password"
-                  placeholder={TOKEN_GUIDES.chatgpt_token.placeholder}
-                  value={providerApiKey}
-                  onChange={(e) => setProviderApiKey(e.target.value)}
-                />
               </div>
               {authAssistantSuccess && (
                 <div className="status ok" style={{ marginTop: 10 }}>{authAssistantSuccess}</div>
@@ -692,5 +751,13 @@ export default function OnboardPage() {
         </div>
       </section>
     </main>
+  );
+}
+
+export default function OnboardPage() {
+  return (
+    <Suspense>
+      <OnboardPageInner />
+    </Suspense>
   );
 }
