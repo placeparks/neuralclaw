@@ -4,22 +4,12 @@ import { createChatGPTFlow } from "@/lib/session-auth";
 const FLOW_COOKIE = "nc_chatgpt_flow";
 const FLOW_TTL_SECONDS = 15 * 60;
 
-function getBaseUrl(req: Request): string {
-  const configured = process.env.NEXT_PUBLIC_APP_URL;
-  if (configured) return configured.replace(/\/$/, "");
-  const url = new URL(req.url);
-  return `${url.protocol}//${url.host}`;
-}
-
-export async function POST(req: Request) {
+export async function POST() {
   try {
-    const base = getBaseUrl(req);
-    const callbackUri = `${base}/api/session-auth/chatgpt/callback`;
-    const flow = createChatGPTFlow(callbackUri);
+    const flow = createChatGPTFlow();
 
     const response = NextResponse.json({
       authUrl: flow.authUrl,
-      // flowToken still returned for the legacy manual-paste fallback
       flowToken: flow.flowToken,
       redirectUri: flow.redirectUri,
       instructions: [
