@@ -417,6 +417,9 @@ export default function OnboardPage() {
               <p className="muted" style={{ fontSize: "0.75rem", margin: "6px 0 0" }}>
                 Fastest path: click the button, open the link in the same browser where ChatGPT is already logged in, then paste the localhost callback URL back here.
               </p>
+              <p className="muted" style={{ fontSize: "0.75rem", margin: "6px 0 0" }}>
+                Prefer straight copy-paste? Use the <a href="/downloads/neuralclaw-session-helper.zip" style={{ color: "var(--accent, #58a6ff)" }}>NeuralClaw Session Helper</a> to copy the ChatGPT session from this browser.
+              </p>
               <div style={{ marginTop: 10, display: "grid", gap: 8 }}>
                 <button type="button" className="solid-btn" onClick={startChatGPTAuth} disabled={authAssistantBusy}>
                   {authAssistantBusy ? "Preparing..." : "Connect ChatGPT in Browser"}
@@ -465,6 +468,9 @@ export default function OnboardPage() {
               <div style={{ fontSize: "0.8rem", fontWeight: 600 }}>Connect Claude</div>
               <p className="muted" style={{ fontSize: "0.75rem", margin: "6px 0 0" }}>
                 Easiest path if Claude is already open: copy the `sessionKey` cookie from your Claude browser and paste it below. You can paste either the raw key or a full cookie string.
+              </p>
+              <p className="muted" style={{ fontSize: "0.75rem", margin: "6px 0 0" }}>
+                Prefer one-click copy? Download the <a href="/downloads/neuralclaw-session-helper.zip" style={{ color: "var(--accent, #58a6ff)" }}>NeuralClaw Session Helper</a>, load it as an unpacked Chrome extension, click <code>Copy Claude sessionKey</code>, then paste here.
               </p>
               <div style={{ marginTop: 10, display: "grid", gap: 8 }}>
                 <label className="label">Paste from Claude browser</label>

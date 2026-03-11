@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>NeuralClaw Session Helper</title>
+    <style>
+      body {
+        margin: 0;
+        padding: 14px;
+        width: 320px;
+        font-family: Arial, sans-serif;
+        background: #10131a;
+        color: #f3efe7;
+      }
+      h1 {
+        margin: 0 0 8px;
+        font-size: 16px;
+      }
+      p {
+        margin: 0 0 10px;
+        font-size: 12px;
+        line-height: 1.5;
+        color: #c9c3b8;
+      }
+      button {
+        width: 100%;
+        margin: 0 0 8px;
+        border: 0;
+        border-radius: 10px;
+        padding: 10px 12px;
+        cursor: pointer;
+        background: linear-gradient(135deg, #ffb347, #ff7a18);
+        color: #0d0d0d;
+        font-weight: 700;
+      }
+      button.secondary {
+        background: #232736;
+        color: #f3efe7;
+      }
+      #status {
+        margin-top: 8px;
+        padding: 10px;
+        border-radius: 8px;
+        background: #171c28;
+        font-size: 12px;
+        white-space: pre-wrap;
+      }
+      code {
+        color: #ffd28d;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>NeuralClaw Session Helper</h1>
+    <p>Use this only for your own account. Nothing is sent anywhere; it only reads the browser cookie and copies it to your clipboard.</p>
+    <button id="copy-claude">Copy Claude sessionKey</button>
+    <button id="copy-chatgpt">Copy ChatGPT session</button>
+    <button id="copy-chatgpt-cookie" class="secondary">Copy ChatGPT cookie string</button>
+    <div id="status">Open Claude or ChatGPT in this browser, then click the matching button.</div>
+    <script src="popup.js"></script>
+  </body>
+  </html>
