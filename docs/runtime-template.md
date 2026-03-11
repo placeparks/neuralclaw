@@ -165,7 +165,9 @@ If the target agent is in the peer list and not blocked, `MeshAwareGateway` POST
 
 ## Applied Hotfixes
 
-These are applied at runtime in `mesh_gateway.py` without requiring a PyPI release:
+These are runtime compatibility behaviors carried by `mesh_gateway.py`:
+
+The old `ToolCall.to_dict()` OpenAI patch is no longer required in `neuralclaw==0.7.5`; the package now handles JSON-string tool arguments upstream.
 
 ### 1. `ToolCall.to_dict` — OpenAI multi-turn tool use
 OpenAI requires `function.arguments` to be a JSON **string**, not a Python dict.

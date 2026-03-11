@@ -101,7 +101,7 @@ const PROVIDER_MODELS: Record<ProviderKey, string[]> = {
   openai: ["gpt-4o", "gpt-4.1", "gpt-4o-mini", "o3", "o4-mini"],
   anthropic: ["claude-sonnet-4-20250514", "claude-opus-4-20250514", "claude-haiku-4-5-20251001", "claude-3-5-sonnet-latest"],
   openrouter: ["anthropic/claude-sonnet-4-20250514", "openai/gpt-4o", "google/gemini-2.0-flash", "meta-llama/llama-4-scout"],
-  local: ["llama3", "mistral", "gemma3", "qwen2.5"],
+  local: ["qwen3.5:2b", "gemma3", "mistral", "llama3"],
   g4f: ["gpt-4o", "gpt-4o-mini", "claude-3.5-sonnet"],
   chatgpt_token: ["auto", "gpt-4o", "gpt-4o-mini", "o3", "o4-mini"],
   claude_token: ["auto", "claude-sonnet-4-20250514", "claude-opus-4-20250514", "claude-haiku-4-5-20251001"],
@@ -211,29 +211,11 @@ export default function OnboardPage() {
     if (!user) router.replace("/register");
   }, [router]);
 
-  const isTokenProvider =
-    provider === "chatgpt_token"
-    || provider === "claude_token"
-    || provider === "chatgpt_session"
-    || provider === "claude_session";
+  const isTokenProvider = provider === "chatgpt_token" || provider === "claude_token";
 
   const activeTokenGuide = useMemo(() => {
     if (provider === "chatgpt_token") return TOKEN_GUIDES.chatgpt_token;
     if (provider === "claude_token") return TOKEN_GUIDES.claude_token;
-    if (provider === "chatgpt_session") {
-      return {
-        title: SESSION_GUIDES.chatgpt_session.title,
-        steps: SESSION_GUIDES.chatgpt_session.steps,
-        placeholder: "__Secure-next-auth.session-token value",
-      };
-    }
-    if (provider === "claude_session") {
-      return {
-        title: SESSION_GUIDES.claude_session.title,
-        steps: SESSION_GUIDES.claude_session.steps,
-        placeholder: "sessionKey value",
-      };
-    }
     return null;
   }, [provider]);
 
