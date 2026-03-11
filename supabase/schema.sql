@@ -14,6 +14,7 @@ begin
   if not exists (select 1 from pg_type where typname = 'provider_key') then
     create type provider_key as enum (
       'openai', 'anthropic', 'openrouter', 'local', 'g4f',
+      'chatgpt_token', 'claude_token',
       'chatgpt_session', 'claude_session'
     );
   end if;
@@ -31,6 +32,20 @@ end $$;
 -- Add new enum values to provider_key if they were added after initial schema run
 do $$
 begin
+  if not exists (
+    select 1 from pg_enum e
+    join pg_type t on t.oid = e.enumtypid
+    where t.typname = 'provider_key' and e.enumlabel = 'chatgpt_token'
+  ) then
+    alter type provider_key add value 'chatgpt_token';
+  end if;
+  if not exists (
+    select 1 from pg_enum e
+    join pg_type t on t.oid = e.enumtypid
+    where t.typname = 'provider_key' and e.enumlabel = 'claude_token'
+  ) then
+    alter type provider_key add value 'claude_token';
+  end if;
   if not exists (
     select 1 from pg_enum e
     join pg_type t on t.oid = e.enumtypid

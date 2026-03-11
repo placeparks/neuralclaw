@@ -12,12 +12,12 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "Missing required fields." }, { status: 400 });
     }
 
-    const sessionProviders = ["chatgpt_session", "claude_session"];
-    if (body.provider !== "local" && body.provider !== "g4f" && !sessionProviders.includes(body.provider) && !body.providerApiKey) {
+    const tokenProviders = ["chatgpt_token", "claude_token", "chatgpt_session", "claude_session"];
+    if (body.provider !== "local" && body.provider !== "g4f" && !tokenProviders.includes(body.provider) && !body.providerApiKey) {
       return NextResponse.json({ error: "Provider API key is required for hosted models." }, { status: 400 });
     }
-    if (sessionProviders.includes(body.provider) && !body.providerApiKey) {
-      return NextResponse.json({ error: "Session token is required for session-based providers." }, { status: 400 });
+    if (tokenProviders.includes(body.provider) && !body.providerApiKey) {
+      return NextResponse.json({ error: "Provider token is required for token-based providers." }, { status: 400 });
     }
 
     if (!Array.isArray(body.channels) || body.channels.length === 0) {
@@ -79,9 +79,6 @@ export async function POST(req: Request) {
     }
     if (hasExplicitToolSelection && allowedTools.length > 0) {
       customEnv.NEURALCLAW_ALLOWED_TOOLS = allowedTools.join(",");
-    }
-    if (body.proxyBaseUrl?.trim()) {
-      customEnv.NEURALCLAW_PROXY_BASE_URL = body.proxyBaseUrl.trim();
     }
     if (body.featureFlags) {
       if (body.featureFlags.evolution !== undefined) {

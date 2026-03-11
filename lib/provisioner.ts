@@ -6,7 +6,16 @@ type DeploymentRow = {
   id: string;
   user_id: string;
   agent_name: string;
-  provider: "openai" | "anthropic" | "openrouter" | "local" | "g4f" | "chatgpt_session" | "claude_session";
+  provider:
+    | "openai"
+    | "anthropic"
+    | "openrouter"
+    | "local"
+    | "g4f"
+    | "chatgpt_token"
+    | "claude_token"
+    | "chatgpt_session"
+    | "claude_session";
   provider_api_key_encrypted: string | null;
   model: string;
   plan: "monthly" | "yearly";
@@ -54,8 +63,15 @@ function providerKeyEnvName(provider: DeploymentRow["provider"]): string | null 
   if (provider === "openai") return "OPENAI_API_KEY";
   if (provider === "anthropic") return "ANTHROPIC_API_KEY";
   if (provider === "openrouter") return "OPENROUTER_API_KEY";
-  if (provider === "chatgpt_session" || provider === "claude_session") return "NEURALCLAW_PROXY_API_KEY";
+  if (provider === "chatgpt_token" || provider === "chatgpt_session") return "CHATGPT_TOKEN";
+  if (provider === "claude_token" || provider === "claude_session") return "CLAUDE_SESSION_KEY";
   return null;
+}
+
+function normalizeRuntimeProvider(provider: DeploymentRow["provider"]): DeploymentRow["provider"] {
+  if (provider === "chatgpt_session") return "chatgpt_token";
+  if (provider === "claude_session") return "claude_token";
+  return provider;
 }
 
 function channelEnv(channels: ChannelRow[]): Record<string, string> {
@@ -131,11 +147,7 @@ async function buildRuntimeVarsForAgent(agentId: string): Promise<{
     throw new Error(channelErr?.message || "Unable to load deployment channels");
   }
 
-  const isSessionProvider = agent.provider === "chatgpt_session" || agent.provider === "claude_session";
-  const runtimeProvider = isSessionProvider ? "proxy" : agent.provider;
-  const sessionProvider = agent.provider === "chatgpt_session" ? "chatgpt"
-    : agent.provider === "claude_session" ? "claude"
-    : undefined;
+  const runtimeProvider = normalizeRuntimeProvider(agent.provider);
 
   const vars: Record<string, string> = {
     NEURALCLAW_PROVIDER: runtimeProvider,
@@ -144,7 +156,6 @@ async function buildRuntimeVarsForAgent(agentId: string): Promise<{
     NEURALCLAW_USER_EMAIL: userRow.email,
     NEURALCLAW_AGENT_NAME: agent.agent_name,
     ...(agent.persona ? { NEURALCLAW_PERSONA: agent.persona } : {}),
-    ...(sessionProvider ? { NEURALCLAW_SESSION_PROVIDER: sessionProvider } : {}),
     ...emptyChannelEnv(),
     ...channelEnv(channels as ChannelRow[]),
   };
@@ -314,11 +325,7 @@ async function processOne(deployment: DeploymentRow) {
     throw new Error(userErr?.message || "Unable to load user for deployment");
   }
 
-  const isSessionProvider = deployment.provider === "chatgpt_session" || deployment.provider === "claude_session";
-  const runtimeProvider = isSessionProvider ? "proxy" : deployment.provider;
-  const sessionProvider = deployment.provider === "chatgpt_session" ? "chatgpt"
-    : deployment.provider === "claude_session" ? "claude"
-    : undefined;
+  const runtimeProvider = normalizeRuntimeProvider(deployment.provider);
 
   const vars: Record<string, string> = {
     NEURALCLAW_PROVIDER: runtimeProvider,
@@ -328,10 +335,6 @@ async function processOne(deployment: DeploymentRow) {
     NEURALCLAW_AGENT_NAME: deployment.agent_name,
     ...channelEnv(channels as ChannelRow[])
   };
-
-  if (sessionProvider) {
-    vars.NEURALCLAW_SESSION_PROVIDER = sessionProvider;
-  }
 
   if (deployment.persona) {
     vars.NEURALCLAW_PERSONA = deployment.persona;

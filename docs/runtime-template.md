@@ -19,11 +19,13 @@ Repo: [`neural-runtime-template`](https://github.com/placeparks/neural-runtime-t
 | Variable | Description |
 |---|---|
 | `NEURALCLAW_AGENT_NAME` | Display name of the agent |
-| `NEURALCLAW_PROVIDER` | LLM provider: `openai`, `anthropic`, `openrouter`, `local` |
+| `NEURALCLAW_PROVIDER` | LLM provider: `openai`, `anthropic`, `openrouter`, `local`, `g4f`, `chatgpt_token`, `claude_token` |
 | `NEURALCLAW_MODEL` | Model ID (e.g. `gpt-4o`, `claude-sonnet-4-20250514`) |
 | `OPENAI_API_KEY` | OpenAI key (if provider = openai) |
 | `ANTHROPIC_API_KEY` | Anthropic key (if provider = anthropic) |
 | `OPENROUTER_API_KEY` | OpenRouter key (if provider = openrouter) |
+| `CHATGPT_TOKEN` | ChatGPT session cookie used by `chatgpt_token` |
+| `CLAUDE_SESSION_KEY` | Claude `sessionKey` used by `claude_token` |
 
 ### Channels
 
@@ -85,12 +87,12 @@ Common examples:
 
 ## Startup Sequence
 
-1. `start.sh` runs: installs `neuralclaw[all-channels]` via pip
+1. `start.sh` runs with `neuralclaw==0.7.5`
 2. Writes `~/.neuralclaw/mesh-peers.json` if `NEURALCLAW_MESH_PEERS_JSON` is set
 3. Writes `~/.neuralclaw/knowledge.txt` if `NEURALCLAW_KNOWLEDGE_CONTENT` is set
-4. Generates `~/.neuralclaw/config.toml` with all settings
-5. `mesh_gateway.py` starts:
-   - Applies `ToolCall.to_dict` monkey-patch (OpenAI multi-turn fix)
+4. Imports `CHATGPT_TOKEN` / `CLAUDE_SESSION_KEY` into NeuralClaw's token store when provided
+5. Generates `~/.neuralclaw/config.toml` with all settings
+6. `mesh_gateway.py` starts:
    - Enables `file_ops` for `~/.neuralclaw/` if knowledge file exists
    - Waits `NEURALCLAW_STARTUP_DELAY` seconds (Telegram 409 prevention)
    - Loads config, injects knowledge hint into persona if applicable

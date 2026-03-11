@@ -7,7 +7,16 @@ export type ChannelKey =
   | "whatsapp"
   | "signal";
 
-export type ProviderKey = "openai" | "anthropic" | "openrouter" | "local" | "g4f" | "chatgpt_session" | "claude_session";
+export type ProviderKey =
+  | "openai"
+  | "anthropic"
+  | "openrouter"
+  | "local"
+  | "g4f"
+  | "chatgpt_token"
+  | "claude_token"
+  | "chatgpt_session"
+  | "claude_session";
 
 export type VoiceProviderKey = "twilio";
 
@@ -38,7 +47,6 @@ export type DeploymentRequest = {
   persona?: string;
   enabledTools?: string[];
   featureFlags?: FeatureFlags;
-  proxyBaseUrl?: string;
   voice?: VoiceConfig;
   channels: Array<{
     channel: ChannelKey;

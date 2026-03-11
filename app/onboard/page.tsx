@@ -103,6 +103,8 @@ const PROVIDER_MODELS: Record<ProviderKey, string[]> = {
   openrouter: ["anthropic/claude-sonnet-4-20250514", "openai/gpt-4o", "google/gemini-2.0-flash", "meta-llama/llama-4-scout"],
   local: ["llama3", "mistral", "gemma3", "qwen2.5"],
   g4f: ["gpt-4o", "gpt-4o-mini", "claude-3.5-sonnet"],
+  chatgpt_token: ["auto", "gpt-4o", "gpt-4o-mini", "o3", "o4-mini"],
+  claude_token: ["auto", "claude-sonnet-4-20250514", "claude-opus-4-20250514", "claude-haiku-4-5-20251001"],
   chatgpt_session: ["gpt-4o", "gpt-4o-mini", "o3", "o4-mini"],
   claude_session: ["claude-sonnet-4-20250514", "claude-opus-4-20250514", "claude-haiku-4-5-20251001"],
 };
@@ -130,6 +132,29 @@ const SESSION_GUIDES: Record<"chatgpt_session" | "claude_session", { title: stri
   },
 };
 
+const TOKEN_GUIDES: Record<"chatgpt_token" | "claude_token", { title: string; steps: string[]; placeholder: string }> = {
+  chatgpt_token: {
+    title: "How to get your ChatGPT session token",
+    steps: [
+      "Use a ChatGPT session cookie you already captured, or bootstrap one locally with neuralclaw session auth chatgpt.",
+      "If copying manually, inspect cookies for chatgpt.com or chat.openai.com.",
+      "Use the value of __Secure-next-auth.session-token or next-auth.session-token.",
+      "Paste it below. The runtime will import it into NeuralClaw's token store on boot.",
+    ],
+    placeholder: "__Secure-next-auth.session-token or next-auth.session-token",
+  },
+  claude_token: {
+    title: "How to get your Claude session token",
+    steps: [
+      "Use a Claude session key you already captured, or bootstrap one locally with neuralclaw session auth claude.",
+      "If copying manually, inspect cookies for claude.ai.",
+      "Find the cookie named sessionKey.",
+      "Paste it below. The runtime will import it into NeuralClaw's token store on boot.",
+    ],
+    placeholder: "sessionKey",
+  },
+};
+
 const SKILLS: SkillConfig[] = [
   { key: "web", label: "Web Search", tools: ["web_search", "fetch_url"] },
   { key: "files", label: "File Ops", tools: ["read_file", "write_file", "list_directory"] },
@@ -143,7 +168,6 @@ export default function OnboardPage() {
   const [plan, setPlan] = useState<"monthly" | "yearly">("monthly");
   const [provider, setProvider] = useState<ProviderKey>("openai");
   const [providerApiKey, setProviderApiKey] = useState("");
-  const [proxyBaseUrl, setProxyBaseUrl] = useState("");
   const [model, setModel] = useState(PROVIDER_MODELS.openai[0]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -187,7 +211,31 @@ export default function OnboardPage() {
     if (!user) router.replace("/register");
   }, [router]);
 
-  const isSessionProvider = provider === "chatgpt_session" || provider === "claude_session";
+  const isTokenProvider =
+    provider === "chatgpt_token"
+    || provider === "claude_token"
+    || provider === "chatgpt_session"
+    || provider === "claude_session";
+
+  const activeTokenGuide = useMemo(() => {
+    if (provider === "chatgpt_token") return TOKEN_GUIDES.chatgpt_token;
+    if (provider === "claude_token") return TOKEN_GUIDES.claude_token;
+    if (provider === "chatgpt_session") {
+      return {
+        title: SESSION_GUIDES.chatgpt_session.title,
+        steps: SESSION_GUIDES.chatgpt_session.steps,
+        placeholder: "__Secure-next-auth.session-token value",
+      };
+    }
+    if (provider === "claude_session") {
+      return {
+        title: SESSION_GUIDES.claude_session.title,
+        steps: SESSION_GUIDES.claude_session.steps,
+        placeholder: "sessionKey value",
+      };
+    }
+    return null;
+  }, [provider]);
 
   const activeChannels = useMemo(() => CHANNELS.filter((c) => enabledChannels[c.key]), [enabledChannels]);
 
@@ -207,7 +255,7 @@ export default function OnboardPage() {
     setSuccess("");
     if (!agentName.trim()) return setError("Agent name is required.");
     if (provider !== "local" && provider !== "g4f" && !providerApiKey.trim()) {
-      return setError(isSessionProvider ? "Session token required." : "Provider API key required.");
+      return setError(isTokenProvider ? "Session token required." : "Provider API key required.");
     }
     if (activeChannels.length === 0) return setError("Enable at least one channel.");
     const missing = activeChannels.find((c) => !tokens[c.key].trim());
@@ -239,7 +287,6 @@ export default function OnboardPage() {
       persona: resolvedPersona,
       enabledTools: isAllToolsEnabled ? undefined : enabledTools,
       featureFlags,
-      proxyBaseUrl: proxyBaseUrl.trim() || undefined,
       voice: voiceEnabled ? {
         enabled: true,
         provider: voiceProvider,
@@ -300,17 +347,19 @@ export default function OnboardPage() {
             <option value="openai">OpenAI (API key)</option>
             <option value="anthropic">Anthropic (API key)</option>
             <option value="openrouter">OpenRouter (API key)</option>
+            <option value="chatgpt_token">ChatGPT (Session Token)</option>
+            <option value="claude_token">Claude (Session Token)</option>
             <option value="chatgpt_session">ChatGPT (Session — no API key)</option>
             <option value="claude_session">Claude (Session — no API key)</option>
             <option value="g4f">Free Wrapper (g4f)</option>
             <option value="local">Local (Ollama)</option>
           </select>
 
-          {isSessionProvider && (
+          {isTokenProvider && activeTokenGuide && (
             <div style={{ margin: "10px 0 4px", padding: "10px 12px", background: "var(--surface-alt, rgba(255,255,255,0.04))", borderRadius: 6, border: "1px solid var(--border, #30363d)" }}>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                 <span style={{ fontSize: "0.8rem", fontWeight: 600 }}>
-                  {SESSION_GUIDES[provider as "chatgpt_session" | "claude_session"].title}
+                  {activeTokenGuide.title}
                 </span>
                 <button
                   type="button"
@@ -322,7 +371,7 @@ export default function OnboardPage() {
               </div>
               {showSessionGuide && (
                 <ol style={{ margin: "8px 0 0", paddingLeft: 18, fontSize: "0.78rem", lineHeight: 1.7 }}>
-                  {SESSION_GUIDES[provider as "chatgpt_session" | "claude_session"].steps.map((step, i) => (
+                  {activeTokenGuide.steps.map((step, i) => (
                     <li key={i}>{step}</li>
                   ))}
                 </ol>
@@ -331,27 +380,23 @@ export default function OnboardPage() {
               <input
                 className="input"
                 type="password"
-                placeholder={provider === "chatgpt_session" ? "__Secure-next-auth.session-token value" : "sessionKey value"}
+                placeholder={activeTokenGuide.placeholder}
                 value={providerApiKey}
                 onChange={(e) => setProviderApiKey(e.target.value)}
               />
               <label className="label" style={{ marginTop: 8 }}>
                 Proxy base URL <span className="muted" style={{ fontSize: "0.75rem", fontWeight: 400 }}>(required — your chatgpt-to-api or compatible relay)</span>
               </label>
-              <input
-                className="input"
-                type="text"
-                placeholder="https://your-proxy.example.com"
-                value={proxyBaseUrl}
-                onChange={(e) => setProxyBaseUrl(e.target.value)}
-              />
               <p className="muted" style={{ fontSize: "0.75rem", margin: "6px 0 0" }}>
-                Session tokens are encrypted at rest. They never leave your deployment environment in plaintext.
+                No proxy URL is required for these session-token providers in the 0.7.5 runtime.
+              </p>
+              <p className="muted" style={{ fontSize: "0.75rem", margin: "6px 0 0" }}>
+                Session tokens are encrypted at rest and imported into the runtime on boot for NeuralClaw 0.7.5 session-token auth.
               </p>
             </div>
           )}
 
-          {!isSessionProvider && provider !== "local" && provider !== "g4f" && (
+          {!isTokenProvider && provider !== "local" && provider !== "g4f" && (
             <>
               <label className="label">API key</label>
               <input className="input" type="password" value={providerApiKey} onChange={(e) => setProviderApiKey(e.target.value)} />
