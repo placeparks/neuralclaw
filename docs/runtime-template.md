@@ -19,9 +19,10 @@ Repo: [`neural-runtime-template`](https://github.com/placeparks/neural-runtime-t
 | Variable | Description |
 |---|---|
 | `NEURALCLAW_AGENT_NAME` | Display name of the agent |
-| `NEURALCLAW_PROVIDER` | LLM provider: `openai`, `anthropic`, `openrouter`, `local`, `g4f`, `chatgpt_token`, `claude_token` |
+| `NEURALCLAW_PROVIDER` | LLM provider: `openai`, `anthropic`, `openrouter`, `venice`, `local`, `g4f`, `chatgpt_token`, `claude_token` |
 | `NEURALCLAW_MODEL` | Model ID (e.g. `gpt-4o`, `claude-sonnet-4-20250514`) |
 | `OPENAI_API_KEY` | OpenAI key (if provider = openai) |
+| `NEURALCLAW_OPENAI_BASE_URL` | Optional OpenAI-compatible base URL override; Venice uses `https://api.venice.ai/api/v1` |
 | `ANTHROPIC_API_KEY` | Anthropic key (if provider = anthropic) |
 | `OPENROUTER_API_KEY` | OpenRouter key (if provider = openrouter) |
 | `CHATGPT_TOKEN` | ChatGPT session cookie used by `chatgpt_token` |

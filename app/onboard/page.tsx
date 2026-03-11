@@ -101,6 +101,7 @@ const PROVIDER_MODELS: Record<ProviderKey, string[]> = {
   openai: ["gpt-4o", "gpt-4.1", "gpt-4o-mini", "o3", "o4-mini"],
   anthropic: ["claude-sonnet-4-20250514", "claude-opus-4-20250514", "claude-haiku-4-5-20251001", "claude-3-5-sonnet-latest"],
   openrouter: ["anthropic/claude-sonnet-4-20250514", "openai/gpt-4o", "google/gemini-2.0-flash", "meta-llama/llama-4-scout"],
+  venice: ["venice-uncensored", "llama-3.3-70b", "qwen3-next-80b", "openai-gpt-oss-120b"],
   local: ["qwen3.5:2b", "gemma3", "mistral", "llama3"],
   g4f: ["gpt-4o", "gpt-4o-mini", "claude-3.5-sonnet"],
   chatgpt_token: ["auto", "gpt-4o", "gpt-4o-mini", "o3", "o4-mini"],
@@ -329,6 +330,7 @@ export default function OnboardPage() {
             <option value="openai">OpenAI (API key)</option>
             <option value="anthropic">Anthropic (API key)</option>
             <option value="openrouter">OpenRouter (API key)</option>
+            <option value="venice">Venice API</option>
             <option value="chatgpt_token">ChatGPT (Session Token)</option>
             <option value="claude_token">Claude (Session Token)</option>
             <option value="chatgpt_session">ChatGPT (Session — no API key)</option>

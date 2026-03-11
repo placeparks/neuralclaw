@@ -11,6 +11,7 @@ export type ProviderKey =
   | "openai"
   | "anthropic"
   | "openrouter"
+  | "venice"
   | "local"
   | "g4f"
   | "chatgpt_token"

@@ -10,6 +10,7 @@ type DeploymentRow = {
     | "openai"
     | "anthropic"
     | "openrouter"
+    | "venice"
     | "local"
     | "g4f"
     | "chatgpt_token"
@@ -63,12 +64,14 @@ function providerKeyEnvName(provider: DeploymentRow["provider"]): string | null 
   if (provider === "openai") return "OPENAI_API_KEY";
   if (provider === "anthropic") return "ANTHROPIC_API_KEY";
   if (provider === "openrouter") return "OPENROUTER_API_KEY";
+  if (provider === "venice") return "OPENAI_API_KEY";
   if (provider === "chatgpt_token" || provider === "chatgpt_session") return "CHATGPT_TOKEN";
   if (provider === "claude_token" || provider === "claude_session") return "CLAUDE_SESSION_KEY";
   return null;
 }
 
 function normalizeRuntimeProvider(provider: DeploymentRow["provider"]): DeploymentRow["provider"] {
+  if (provider === "venice") return "openai";
   if (provider === "chatgpt_session") return "chatgpt_token";
   if (provider === "claude_session") return "claude_token";
   return provider;
@@ -159,6 +162,9 @@ async function buildRuntimeVarsForAgent(agentId: string): Promise<{
     ...emptyChannelEnv(),
     ...channelEnv(channels as ChannelRow[]),
   };
+  if (agent.provider === "venice") {
+    vars.NEURALCLAW_OPENAI_BASE_URL = "https://api.venice.ai/api/v1";
+  }
 
   const sharedMeshSecret = process.env.NEURALCLAW_MESH_SHARED_SECRET;
   if (sharedMeshSecret) {
@@ -335,6 +341,9 @@ async function processOne(deployment: DeploymentRow) {
     NEURALCLAW_AGENT_NAME: deployment.agent_name,
     ...channelEnv(channels as ChannelRow[])
   };
+  if (deployment.provider === "venice") {
+    vars.NEURALCLAW_OPENAI_BASE_URL = "https://api.venice.ai/api/v1";
+  }
 
   if (deployment.persona) {
     vars.NEURALCLAW_PERSONA = deployment.persona;
