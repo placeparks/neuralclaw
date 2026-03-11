@@ -199,7 +199,6 @@ export default function OnboardPage() {
   });
   const [featureFlags, setFeatureFlags] = useState<FeatureFlags>({ evolution: false, reflective_reasoning: true });
   const [showAdvanced, setShowAdvanced] = useState(false);
-  const [showSessionGuide, setShowSessionGuide] = useState(false);
   const [voiceEnabled, setVoiceEnabled] = useState(false);
   const [voiceProvider, setVoiceProvider] = useState<VoiceProviderKey>("twilio");
   const [voiceAccountSid, setVoiceAccountSid] = useState("");
@@ -232,12 +231,6 @@ export default function OnboardPage() {
 
   const isTokenProvider = provider === "chatgpt_token" || provider === "claude_token";
 
-  const activeTokenGuide = useMemo(() => {
-    if (provider === "chatgpt_token") return TOKEN_GUIDES.chatgpt_token;
-    if (provider === "claude_token") return TOKEN_GUIDES.claude_token;
-    return null;
-  }, [provider]);
-
   const activeChannels = useMemo(() => CHANNELS.filter((c) => enabledChannels[c.key]), [enabledChannels]);
 
   const resolvedPersona = useMemo(() => {
@@ -255,7 +248,11 @@ export default function OnboardPage() {
     setError("");
     setSuccess("");
     if (!agentName.trim()) return setError("Agent name is required.");
-    if (provider !== "local" && provider !== "g4f" && !providerApiKey.trim()) {
+    const resolvedProviderCredential = provider === "claude_token"
+      ? (providerApiKey.trim() || authAssistantInput.trim())
+      : providerApiKey.trim();
+
+    if (provider !== "local" && provider !== "g4f" && !resolvedProviderCredential) {
       return setError(isTokenProvider ? "Session token required." : "Provider API key required.");
     }
     if (activeChannels.length === 0) return setError("Enable at least one channel.");
@@ -282,7 +279,7 @@ export default function OnboardPage() {
       agentName,
       plan,
       provider,
-      providerApiKey,
+      providerApiKey: resolvedProviderCredential,
       model,
       region: "us-east-1",
       persona: resolvedPersona,
@@ -403,7 +400,6 @@ export default function OnboardPage() {
             const p = e.target.value as ProviderKey;
             setProvider(p);
             setModel(PROVIDER_MODELS[p][0]);
-            setShowSessionGuide(false);
           }}>
             <option value="openai">OpenAI (API key)</option>
             <option value="anthropic">Anthropic (API key)</option>
@@ -415,91 +411,77 @@ export default function OnboardPage() {
             <option value="local">Local (Ollama)</option>
           </select>
 
-          {isTokenProvider && activeTokenGuide && (
+          {provider === "chatgpt_token" && (
             <div style={{ margin: "10px 0 4px", padding: "10px 12px", background: "var(--surface-alt, rgba(255,255,255,0.04))", borderRadius: 6, border: "1px solid var(--border, #30363d)" }}>
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                <span style={{ fontSize: "0.8rem", fontWeight: 600 }}>
-                  {activeTokenGuide.title}
-                </span>
-                <button
-                  type="button"
-                  style={{ background: "none", border: "none", cursor: "pointer", color: "var(--accent, #58a6ff)", fontSize: "0.78rem", padding: 0 }}
-                  onClick={() => setShowSessionGuide((v) => !v)}
-                >
-                  {showSessionGuide ? "Hide guide" : "How to get it"}
+              <div style={{ fontSize: "0.8rem", fontWeight: 600 }}>Connect ChatGPT</div>
+              <p className="muted" style={{ fontSize: "0.75rem", margin: "6px 0 0" }}>
+                Fastest path: click the button, open the link in the same browser where ChatGPT is already logged in, then paste the localhost callback URL back here.
+              </p>
+              <div style={{ marginTop: 10, display: "grid", gap: 8 }}>
+                <button type="button" className="solid-btn" onClick={startChatGPTAuth} disabled={authAssistantBusy}>
+                  {authAssistantBusy ? "Preparing..." : "Connect ChatGPT in Browser"}
                 </button>
+                {authFlowUrl && (
+                  <>
+                    <label className="label">1. Open this link</label>
+                    <textarea
+                      className="input"
+                      style={{ minHeight: 70, resize: "vertical", fontSize: "0.78rem", fontFamily: "var(--font-mono, monospace)" }}
+                      readOnly
+                      value={authFlowUrl}
+                    />
+                    <label className="label">2. Paste the localhost callback URL</label>
+                    <textarea
+                      className="input"
+                      style={{ minHeight: 70, resize: "vertical", fontSize: "0.78rem", fontFamily: "var(--font-mono, monospace)" }}
+                      placeholder="http://localhost:1455/callback?code=...&state=..."
+                      value={authCallbackUrl}
+                      onChange={(e) => setAuthCallbackUrl(e.target.value)}
+                    />
+                    <button type="button" className="solid-btn" onClick={finishChatGPTAuth} disabled={authAssistantBusy || !authFlowToken || !authCallbackUrl.trim()}>
+                      {authAssistantBusy ? "Exchanging..." : "Finish ChatGPT Connection"}
+                    </button>
+                  </>
+                )}
+                <label className="label" style={{ marginTop: 4 }}>Already have a ChatGPT session credential?</label>
+                <input
+                  className="input"
+                  type="password"
+                  placeholder={TOKEN_GUIDES.chatgpt_token.placeholder}
+                  value={providerApiKey}
+                  onChange={(e) => setProviderApiKey(e.target.value)}
+                />
               </div>
-              {showSessionGuide && (
-                <ol style={{ margin: "8px 0 0", paddingLeft: 18, fontSize: "0.78rem", lineHeight: 1.7 }}>
-                  {activeTokenGuide.steps.map((step, i) => (
-                    <li key={i}>{step}</li>
-                  ))}
-                </ol>
+              {authAssistantSuccess && (
+                <div className="status ok" style={{ marginTop: 10 }}>{authAssistantSuccess}</div>
               )}
-              <label className="label" style={{ marginTop: 10 }}>Session credential</label>
-              <input
-                className="input"
-                type="password"
-                placeholder={activeTokenGuide.placeholder}
-                value={providerApiKey}
-                onChange={(e) => setProviderApiKey(e.target.value)}
-              />
-              <label className="label" style={{ marginTop: 8 }}>
-                Session bootstrap <span className="muted" style={{ fontSize: "0.75rem", fontWeight: 400 }}>(recommended: use the NeuralClaw CLI first)</span>
-              </label>
+              {authAssistantError && (
+                <div className="status err" style={{ marginTop: 10 }}>{authAssistantError}</div>
+              )}
+            </div>
+          )}
+          {provider === "claude_token" && (
+            <div style={{ margin: "10px 0 4px", padding: "10px 12px", background: "var(--surface-alt, rgba(255,255,255,0.04))", borderRadius: 6, border: "1px solid var(--border, #30363d)" }}>
+              <div style={{ fontSize: "0.8rem", fontWeight: 600 }}>Connect Claude</div>
               <p className="muted" style={{ fontSize: "0.75rem", margin: "6px 0 0" }}>
-                No proxy URL is required for these session-based providers in the 0.7.7 runtime.
+                Easiest path if Claude is already open: copy the `sessionKey` cookie from your Claude browser and paste it below. You can paste either the raw key or a full cookie string.
               </p>
-              <p className="muted" style={{ fontSize: "0.75rem", margin: "6px 0 0" }}>
-                Session credentials are encrypted at rest and imported into the runtime on boot for NeuralClaw 0.7.7 session auth.
-              </p>
-              {provider === "chatgpt_token" && (
-                <div style={{ marginTop: 10, display: "grid", gap: 8 }}>
-                  <button type="button" className="solid-btn" onClick={startChatGPTAuth} disabled={authAssistantBusy}>
-                    {authAssistantBusy ? "Preparing..." : "Connect ChatGPT in Browser"}
-                  </button>
-                  {authFlowUrl && (
-                    <>
-                      <label className="label">Open this URL in your logged-in ChatGPT browser</label>
-                      <textarea
-                        className="input"
-                        style={{ minHeight: 70, resize: "vertical", fontSize: "0.78rem", fontFamily: "var(--font-mono, monospace)" }}
-                        readOnly
-                        value={authFlowUrl}
-                      />
-                      <label className="label">Paste the full localhost callback URL</label>
-                      <textarea
-                        className="input"
-                        style={{ minHeight: 70, resize: "vertical", fontSize: "0.78rem", fontFamily: "var(--font-mono, monospace)" }}
-                        placeholder="http://localhost:1455/callback?code=...&state=..."
-                        value={authCallbackUrl}
-                        onChange={(e) => setAuthCallbackUrl(e.target.value)}
-                      />
-                      <button type="button" className="solid-btn" onClick={finishChatGPTAuth} disabled={authAssistantBusy || !authFlowToken || !authCallbackUrl.trim()}>
-                        {authAssistantBusy ? "Exchanging..." : "Capture ChatGPT Session"}
-                      </button>
-                    </>
-                  )}
-                </div>
-              )}
-              {provider === "claude_token" && (
-                <div style={{ marginTop: 10, display: "grid", gap: 8 }}>
-                  <label className="label">Paste a Claude session string</label>
-                  <textarea
-                    className="input"
-                    style={{ minHeight: 70, resize: "vertical", fontSize: "0.78rem", fontFamily: "var(--font-mono, monospace)" }}
-                    placeholder="sessionKey=... or the raw sessionKey value"
-                    value={authAssistantInput}
-                    onChange={(e) => setAuthAssistantInput(e.target.value)}
-                  />
-                  <button type="button" className="solid-btn" onClick={extractClaudeCredential} disabled={authAssistantBusy || !(authAssistantInput || providerApiKey).trim()}>
-                    {authAssistantBusy ? "Extracting..." : "Use Claude Session Key"}
-                  </button>
-                  <p className="muted" style={{ fontSize: "0.75rem", margin: 0 }}>
-                    If Claude is already open in your browser, copy the `sessionKey` cookie value or any cookie string containing `sessionKey=...`, then use this helper.
-                  </p>
-                </div>
-              )}
+              <div style={{ marginTop: 10, display: "grid", gap: 8 }}>
+                <label className="label">Paste from Claude browser</label>
+                <textarea
+                  className="input"
+                  style={{ minHeight: 80, resize: "vertical", fontSize: "0.78rem", fontFamily: "var(--font-mono, monospace)" }}
+                  placeholder="sessionKey=... or the raw sessionKey value"
+                  value={authAssistantInput}
+                  onChange={(e) => setAuthAssistantInput(e.target.value)}
+                />
+                <button type="button" className="solid-btn" onClick={extractClaudeCredential} disabled={authAssistantBusy || !(authAssistantInput || providerApiKey).trim()}>
+                  {authAssistantBusy ? "Checking..." : "Use Claude Browser Session"}
+                </button>
+                <p className="muted" style={{ fontSize: "0.75rem", margin: 0 }}>
+                  Browser steps: <code>Claude tab -&gt; F12 -&gt; Application -&gt; Cookies -&gt; https://claude.ai -&gt; sessionKey -&gt; Copy Value</code>.
+                </p>
+              </div>
               {authAssistantSuccess && (
                 <div className="status ok" style={{ marginTop: 10 }}>{authAssistantSuccess}</div>
               )}

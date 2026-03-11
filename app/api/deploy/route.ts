@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { getSupabaseAdmin } from "@/lib/supabase-admin";
 import { encryptToken } from "@/lib/token-crypto";
 import { runProvision } from "@/lib/provisioner";
+import { extractClaudeSessionCredential } from "@/lib/session-auth";
 import type { DeploymentRequest } from "@/lib/types";
 
 function validateChannelToken(channel: string, token: string): string | null {
@@ -31,16 +32,21 @@ function validateChannelToken(channel: string, token: string): string | null {
 export async function POST(req: Request) {
   try {
     const body = (await req.json()) as DeploymentRequest;
+    let providerApiKey = body.providerApiKey?.trim() || "";
 
     if (!body.userEmail || !body.agentName || !body.plan || !body.provider || !body.model || !body.region) {
       return NextResponse.json({ error: "Missing required fields." }, { status: 400 });
     }
 
     const tokenProviders = ["chatgpt_token", "claude_token", "chatgpt_session", "claude_session"];
-    if (body.provider !== "local" && body.provider !== "g4f" && !tokenProviders.includes(body.provider) && !body.providerApiKey) {
+    if (body.provider === "claude_token" && providerApiKey) {
+      providerApiKey = extractClaudeSessionCredential(providerApiKey);
+    }
+
+    if (body.provider !== "local" && body.provider !== "g4f" && !tokenProviders.includes(body.provider) && !providerApiKey) {
       return NextResponse.json({ error: "Provider API key is required for hosted models." }, { status: 400 });
     }
-    if (tokenProviders.includes(body.provider) && !body.providerApiKey) {
+    if (tokenProviders.includes(body.provider) && !providerApiKey) {
       return NextResponse.json({ error: "Provider token is required for token-based providers." }, { status: 400 });
     }
 
@@ -127,7 +133,7 @@ export async function POST(req: Request) {
         agent_name: body.agentName,
         plan: body.plan,
         provider: body.provider,
-        provider_api_key_encrypted: body.providerApiKey ? encryptToken(body.providerApiKey) : null,
+        provider_api_key_encrypted: providerApiKey ? encryptToken(providerApiKey) : null,
         model: body.model,
         region: body.region,
         persona: body.persona?.trim() || null,
