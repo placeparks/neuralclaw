@@ -7,6 +7,7 @@ import type { ChannelKey, DeploymentRequest, FeatureFlags, ProviderKey, VoicePro
 
 type ChannelConfig = { key: ChannelKey; label: string; placeholder: string };
 type SkillConfig = { key: "web" | "files" | "code" | "calendar"; label: string; tools: string[] };
+type OnboardProviderKey = Exclude<ProviderKey, "chatgpt_token" | "claude_token" | "chatgpt_session" | "claude_session">;
 
 const PERSONAS: Array<{ key: string; label: string; preview: string }> = [
   {
@@ -97,65 +98,13 @@ const CHANNELS: ChannelConfig[] = [
   { key: "signal", label: "Signal", placeholder: "+1234567890" }
 ];
 
-const PROVIDER_MODELS: Record<ProviderKey, string[]> = {
+const PROVIDER_MODELS: Record<OnboardProviderKey, string[]> = {
   openai: ["gpt-4o", "gpt-4.1", "gpt-4o-mini", "o3", "o4-mini"],
   anthropic: ["claude-sonnet-4-20250514", "claude-opus-4-20250514", "claude-haiku-4-5-20251001", "claude-3-5-sonnet-latest"],
   openrouter: ["anthropic/claude-sonnet-4-20250514", "openai/gpt-4o", "google/gemini-2.0-flash", "meta-llama/llama-4-scout"],
   venice: ["venice-uncensored", "llama-3.3-70b", "qwen3-next-80b", "openai-gpt-oss-120b"],
   local: ["qwen3.5:2b", "gemma3", "mistral", "llama3"],
   g4f: ["gpt-4o", "gpt-4o-mini", "claude-3.5-sonnet"],
-  chatgpt_token: ["auto", "gpt-4o", "gpt-4o-mini", "o3", "o4-mini"],
-  claude_token: ["auto", "claude-sonnet-4-20250514", "claude-opus-4-20250514", "claude-haiku-4-5-20251001"],
-  chatgpt_session: ["gpt-4o", "gpt-4o-mini", "o3", "o4-mini"],
-  claude_session: ["claude-sonnet-4-20250514", "claude-opus-4-20250514", "claude-haiku-4-5-20251001"],
-};
-
-const SESSION_GUIDES: Record<"chatgpt_session" | "claude_session", { title: string; steps: string[] }> = {
-  chatgpt_session: {
-    title: "How to get your ChatGPT session token",
-    steps: [
-      "Open chat.openai.com in Chrome or Firefox and log in.",
-      "Press F12 to open DevTools → go to the Application tab.",
-      "Expand Cookies → click https://chat.openai.com.",
-      "Find the cookie named __Secure-next-auth.session-token.",
-      "Copy the full Value (it's a long JWT string) and paste it below.",
-    ],
-  },
-  claude_session: {
-    title: "How to get your Claude session token",
-    steps: [
-      "Open claude.ai in Chrome or Firefox and log in.",
-      "Press F12 to open DevTools → go to the Application tab.",
-      "Expand Cookies → click https://claude.ai.",
-      "Find the cookie named sessionKey.",
-      "Copy the full Value and paste it below.",
-    ],
-  },
-};
-
-const TOKEN_GUIDES: Record<"chatgpt_token" | "claude_token", { title: string; steps: string[]; placeholder: string }> = {
-  chatgpt_token: {
-    title: "How to get your ChatGPT session credential",
-    steps: [
-      "Preferred: run neuralclaw session auth chatgpt --stealth on your own machine to capture a valid ChatGPT session credential.",
-      "If you already have a valid session cookie, you can still paste it here directly.",
-      "If copying manually, inspect cookies for chatgpt.com or chat.openai.com.",
-      "Use the value of __Secure-next-auth.session-token or next-auth.session-token.",
-      "Paste it below. The runtime imports it into NeuralClaw's token store on boot.",
-    ],
-    placeholder: "__Secure-next-auth.session-token or next-auth.session-token",
-  },
-  claude_token: {
-    title: "How to get your Claude session credential",
-    steps: [
-      "Preferred: run neuralclaw session auth claude --stealth on your own machine to complete the new Claude auth flow.",
-      "If you already have a valid Claude session key, you can still paste it here directly.",
-      "If copying manually, inspect cookies for claude.ai.",
-      "Find the cookie named sessionKey.",
-      "Paste it below. The runtime imports it into NeuralClaw's token store on boot.",
-    ],
-    placeholder: "sessionKey",
-  },
 };
 
 const SKILLS: SkillConfig[] = [
@@ -169,7 +118,7 @@ function OnboardPageInner() {
   const router = useRouter();
   const [agentName, setAgentName] = useState("");
   const [plan, setPlan] = useState<"monthly" | "yearly">("monthly");
-  const [provider, setProvider] = useState<ProviderKey>("openai");
+  const [provider, setProvider] = useState<OnboardProviderKey>("openai");
   const [providerApiKey, setProviderApiKey] = useState("");
   const [model, setModel] = useState(PROVIDER_MODELS.openai[0]);
   const [loading, setLoading] = useState(false);
@@ -207,23 +156,11 @@ function OnboardPageInner() {
   const [voiceRequireConfirmation, setVoiceRequireConfirmation] = useState(true);
   const [voicePersona, setVoicePersona] = useState("");
   const [voiceOpenAiKey, setVoiceOpenAiKey] = useState("");
-  const [authAssistantInput, setAuthAssistantInput] = useState("");
-  const [authAssistantBusy, setAuthAssistantBusy] = useState(false);
-  const [authAssistantError, setAuthAssistantError] = useState("");
-  const [authAssistantSuccess, setAuthAssistantSuccess] = useState("");
 
   useEffect(() => {
     const user = getStoredUser();
     if (!user) router.replace("/register");
   }, [router]);
-
-  useEffect(() => {
-    setAuthAssistantInput("");
-    setAuthAssistantError("");
-    setAuthAssistantSuccess("");
-  }, [provider]);
-
-  const isTokenProvider = provider === "chatgpt_token" || provider === "claude_token";
 
   const activeChannels = useMemo(() => CHANNELS.filter((c) => enabledChannels[c.key]), [enabledChannels]);
 
@@ -242,12 +179,10 @@ function OnboardPageInner() {
     setError("");
     setSuccess("");
     if (!agentName.trim()) return setError("Agent name is required.");
-    const resolvedProviderCredential = provider === "claude_token"
-      ? (providerApiKey.trim() || authAssistantInput.trim())
-      : providerApiKey.trim();
+    const resolvedProviderCredential = providerApiKey.trim();
 
     if (provider !== "local" && provider !== "g4f" && !resolvedProviderCredential) {
-      return setError(isTokenProvider ? "Session token required." : "Provider API key required.");
+      return setError("Provider API key required.");
     }
     if (activeChannels.length === 0) return setError("Enable at least one channel.");
     const missing = activeChannels.find((c) => !tokens[c.key].trim());
@@ -310,27 +245,6 @@ function OnboardPageInner() {
     }
   }
 
-  async function extractClaudeCredential() {
-    try {
-      setAuthAssistantBusy(true);
-      setAuthAssistantError("");
-      setAuthAssistantSuccess("");
-      const res = await fetch("/api/session-auth/claude/extract", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ input: authAssistantInput || providerApiKey }),
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "Failed to extract Claude session key.");
-      setProviderApiKey(data.credential);
-      setAuthAssistantSuccess("Claude sessionKey extracted and inserted into the deploy form.");
-    } catch (e) {
-      setAuthAssistantError(e instanceof Error ? e.message : "Unexpected error");
-    } finally {
-      setAuthAssistantBusy(false);
-    }
-  }
-
   return (
     <main className="site">
       <div className="bg-orb orb-b" />
@@ -352,7 +266,7 @@ function OnboardPageInner() {
           </div>
           <label className="label">Provider</label>
           <select className="select" value={provider} onChange={(e) => {
-            const p = e.target.value as ProviderKey;
+            const p = e.target.value as OnboardProviderKey;
             setProvider(p);
             setModel(PROVIDER_MODELS[p][0]);
           }}>
@@ -360,71 +274,11 @@ function OnboardPageInner() {
             <option value="anthropic">Anthropic (API key)</option>
             <option value="openrouter">OpenRouter (API key)</option>
             <option value="venice">Venice API</option>
-            <option value="chatgpt_token">ChatGPT (Session Token)</option>
-            <option value="claude_token">Claude (Session Key)</option>
             <option value="g4f">Free Wrapper (g4f)</option>
             <option value="local">Local (Ollama)</option>
           </select>
 
-          {provider === "chatgpt_token" && (
-            <div style={{ margin: "10px 0 4px", padding: "10px 12px", background: "var(--surface-alt, rgba(255,255,255,0.04))", borderRadius: 6, border: "1px solid var(--border, #30363d)" }}>
-              <div style={{ fontSize: "0.8rem", fontWeight: 600 }}>Use ChatGPT Session Token</div>
-              <p className="muted" style={{ fontSize: "0.75rem", margin: "6px 0 0" }}>
-                Paste a valid ChatGPT session token directly. Hosted OAuth has been removed because it is not reliable in production.
-              </p>
-              <p className="muted" style={{ fontSize: "0.75rem", margin: "6px 0 0" }}>
-                Best path: run <code>neuralclaw session auth chatgpt</code> locally, then paste the captured credential here. Manual browser copy also works.
-              </p>
-              <div style={{ marginTop: 10, display: "grid", gap: 8 }}>
-                <label className="label">Paste ChatGPT session token</label>
-                <input
-                  className="input"
-                  type="password"
-                  placeholder={TOKEN_GUIDES.chatgpt_token.placeholder}
-                  value={providerApiKey}
-                  onChange={(e) => setProviderApiKey(e.target.value)}
-                />
-                <p className="muted" style={{ fontSize: "0.75rem", margin: 0 }}>
-                  Browser steps: <code>ChatGPT tab -&gt; F12 -&gt; Application -&gt; Cookies -&gt; chatgpt.com or chat.openai.com -&gt; __Secure-next-auth.session-token</code>.
-                </p>
-              </div>
-            </div>
-          )}
-          {provider === "claude_token" && (
-            <div style={{ margin: "10px 0 4px", padding: "10px 12px", background: "var(--surface-alt, rgba(255,255,255,0.04))", borderRadius: 6, border: "1px solid var(--border, #30363d)" }}>
-              <div style={{ fontSize: "0.8rem", fontWeight: 600 }}>Connect Claude</div>
-              <p className="muted" style={{ fontSize: "0.75rem", margin: "6px 0 0" }}>
-                Easiest path if Claude is already open: copy the `sessionKey` cookie from your Claude browser and paste it below. You can paste either the raw key or a full cookie string.
-              </p>
-              <p className="muted" style={{ fontSize: "0.75rem", margin: "6px 0 0" }}>
-                Prefer one-click copy? Download the <a href="/downloads/neuralclaw-session-helper.zip" style={{ color: "var(--accent, #58a6ff)" }}>NeuralClaw Session Helper</a>, load it as an unpacked Chrome extension, click <code>Copy Claude sessionKey</code>, then paste here.
-              </p>
-              <div style={{ marginTop: 10, display: "grid", gap: 8 }}>
-                <label className="label">Paste from Claude browser</label>
-                <textarea
-                  className="input"
-                  style={{ minHeight: 80, resize: "vertical", fontSize: "0.78rem", fontFamily: "var(--font-mono, monospace)" }}
-                  placeholder="sessionKey=... or the raw sessionKey value"
-                  value={authAssistantInput}
-                  onChange={(e) => setAuthAssistantInput(e.target.value)}
-                />
-                <button type="button" className="solid-btn" onClick={extractClaudeCredential} disabled={authAssistantBusy || !(authAssistantInput || providerApiKey).trim()}>
-                  {authAssistantBusy ? "Checking..." : "Use Claude Browser Session"}
-                </button>
-                <p className="muted" style={{ fontSize: "0.75rem", margin: 0 }}>
-                  Browser steps: <code>Claude tab -&gt; F12 -&gt; Application -&gt; Cookies -&gt; https://claude.ai -&gt; sessionKey -&gt; Copy Value</code>.
-                </p>
-              </div>
-              {authAssistantSuccess && (
-                <div className="status ok" style={{ marginTop: 10 }}>{authAssistantSuccess}</div>
-              )}
-              {authAssistantError && (
-                <div className="status err" style={{ marginTop: 10 }}>{authAssistantError}</div>
-              )}
-            </div>
-          )}
-
-          {!isTokenProvider && provider !== "local" && provider !== "g4f" && (
+          {provider !== "local" && provider !== "g4f" && (
             <>
               <label className="label">API key</label>
               <input className="input" type="password" value={providerApiKey} onChange={(e) => setProviderApiKey(e.target.value)} />
