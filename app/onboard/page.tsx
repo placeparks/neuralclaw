@@ -135,22 +135,24 @@ const SESSION_GUIDES: Record<"chatgpt_session" | "claude_session", { title: stri
 
 const TOKEN_GUIDES: Record<"chatgpt_token" | "claude_token", { title: string; steps: string[]; placeholder: string }> = {
   chatgpt_token: {
-    title: "How to get your ChatGPT session token",
+    title: "How to get your ChatGPT session credential",
     steps: [
-      "Use a ChatGPT session cookie you already captured, or bootstrap one locally with neuralclaw session auth chatgpt.",
+      "Preferred: run neuralclaw session auth chatgpt --stealth on your own machine to complete the new OpenAI auth flow.",
+      "If you already have a valid session cookie, you can still paste it here directly.",
       "If copying manually, inspect cookies for chatgpt.com or chat.openai.com.",
       "Use the value of __Secure-next-auth.session-token or next-auth.session-token.",
-      "Paste it below. The runtime will import it into NeuralClaw's token store on boot.",
+      "Paste it below. The runtime imports it into NeuralClaw's token store on boot.",
     ],
-    placeholder: "__Secure-next-auth.session-token or next-auth.session-token",
+    placeholder: "OAuth-derived session cookie or __Secure-next-auth.session-token",
   },
   claude_token: {
-    title: "How to get your Claude session token",
+    title: "How to get your Claude session credential",
     steps: [
-      "Use a Claude session key you already captured, or bootstrap one locally with neuralclaw session auth claude.",
+      "Preferred: run neuralclaw session auth claude --stealth on your own machine to complete the new Claude auth flow.",
+      "If you already have a valid Claude session key, you can still paste it here directly.",
       "If copying manually, inspect cookies for claude.ai.",
       "Find the cookie named sessionKey.",
-      "Paste it below. The runtime will import it into NeuralClaw's token store on boot.",
+      "Paste it below. The runtime imports it into NeuralClaw's token store on boot.",
     ],
     placeholder: "sessionKey",
   },
@@ -206,11 +208,27 @@ export default function OnboardPage() {
   const [voiceRequireConfirmation, setVoiceRequireConfirmation] = useState(true);
   const [voicePersona, setVoicePersona] = useState("");
   const [voiceOpenAiKey, setVoiceOpenAiKey] = useState("");
+  const [authFlowToken, setAuthFlowToken] = useState("");
+  const [authFlowUrl, setAuthFlowUrl] = useState("");
+  const [authCallbackUrl, setAuthCallbackUrl] = useState("");
+  const [authAssistantInput, setAuthAssistantInput] = useState("");
+  const [authAssistantBusy, setAuthAssistantBusy] = useState(false);
+  const [authAssistantError, setAuthAssistantError] = useState("");
+  const [authAssistantSuccess, setAuthAssistantSuccess] = useState("");
 
   useEffect(() => {
     const user = getStoredUser();
     if (!user) router.replace("/register");
   }, [router]);
+
+  useEffect(() => {
+    setAuthFlowToken("");
+    setAuthFlowUrl("");
+    setAuthCallbackUrl("");
+    setAuthAssistantInput("");
+    setAuthAssistantError("");
+    setAuthAssistantSuccess("");
+  }, [provider]);
 
   const isTokenProvider = provider === "chatgpt_token" || provider === "claude_token";
 
@@ -301,6 +319,66 @@ export default function OnboardPage() {
     }
   }
 
+  async function startChatGPTAuth() {
+    try {
+      setAuthAssistantBusy(true);
+      setAuthAssistantError("");
+      setAuthAssistantSuccess("");
+      const res = await fetch("/api/session-auth/chatgpt/start", { method: "POST" });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Failed to start ChatGPT auth.");
+      setAuthFlowToken(data.flowToken);
+      setAuthFlowUrl(data.authUrl);
+      setAuthAssistantSuccess("Open the auth URL, finish login, then paste the localhost callback URL below.");
+    } catch (e) {
+      setAuthAssistantError(e instanceof Error ? e.message : "Unexpected error");
+    } finally {
+      setAuthAssistantBusy(false);
+    }
+  }
+
+  async function finishChatGPTAuth() {
+    try {
+      setAuthAssistantBusy(true);
+      setAuthAssistantError("");
+      setAuthAssistantSuccess("");
+      const res = await fetch("/api/session-auth/chatgpt/complete", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ flowToken: authFlowToken, callbackUrl: authCallbackUrl }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Failed to finish ChatGPT auth.");
+      setProviderApiKey(data.credential);
+      setAuthAssistantSuccess("ChatGPT session credential captured and inserted into the deploy form.");
+    } catch (e) {
+      setAuthAssistantError(e instanceof Error ? e.message : "Unexpected error");
+    } finally {
+      setAuthAssistantBusy(false);
+    }
+  }
+
+  async function extractClaudeCredential() {
+    try {
+      setAuthAssistantBusy(true);
+      setAuthAssistantError("");
+      setAuthAssistantSuccess("");
+      const res = await fetch("/api/session-auth/claude/extract", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ input: authAssistantInput || providerApiKey }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Failed to extract Claude session key.");
+      setProviderApiKey(data.credential);
+      setAuthAssistantSuccess("Claude sessionKey extracted and inserted into the deploy form.");
+    } catch (e) {
+      setAuthAssistantError(e instanceof Error ? e.message : "Unexpected error");
+    } finally {
+      setAuthAssistantBusy(false);
+    }
+  }
+
   return (
     <main className="site">
       <div className="bg-orb orb-b" />
@@ -331,8 +409,8 @@ export default function OnboardPage() {
             <option value="anthropic">Anthropic (API key)</option>
             <option value="openrouter">OpenRouter (API key)</option>
             <option value="venice">Venice API</option>
-            <option value="chatgpt_token">ChatGPT (Session Token)</option>
-            <option value="claude_token">Claude (Session Token)</option>
+            <option value="chatgpt_token">ChatGPT (Session / OAuth)</option>
+            <option value="claude_token">Claude (Session / OAuth)</option>
             <option value="chatgpt_session">ChatGPT (Session — no API key)</option>
             <option value="claude_session">Claude (Session — no API key)</option>
             <option value="g4f">Free Wrapper (g4f)</option>
@@ -360,7 +438,7 @@ export default function OnboardPage() {
                   ))}
                 </ol>
               )}
-              <label className="label" style={{ marginTop: 10 }}>Session token</label>
+              <label className="label" style={{ marginTop: 10 }}>Session credential</label>
               <input
                 className="input"
                 type="password"
@@ -369,14 +447,67 @@ export default function OnboardPage() {
                 onChange={(e) => setProviderApiKey(e.target.value)}
               />
               <label className="label" style={{ marginTop: 8 }}>
-                Proxy base URL <span className="muted" style={{ fontSize: "0.75rem", fontWeight: 400 }}>(required — your chatgpt-to-api or compatible relay)</span>
+                Session bootstrap <span className="muted" style={{ fontSize: "0.75rem", fontWeight: 400 }}>(recommended: use the NeuralClaw CLI first)</span>
               </label>
               <p className="muted" style={{ fontSize: "0.75rem", margin: "6px 0 0" }}>
-                No proxy URL is required for these session-token providers in the 0.7.5 runtime.
+                No proxy URL is required for these session-based providers in the 0.7.7 runtime.
               </p>
               <p className="muted" style={{ fontSize: "0.75rem", margin: "6px 0 0" }}>
-                Session tokens are encrypted at rest and imported into the runtime on boot for NeuralClaw 0.7.5 session-token auth.
+                Session credentials are encrypted at rest and imported into the runtime on boot for NeuralClaw 0.7.7 session auth.
               </p>
+              {provider === "chatgpt_token" && (
+                <div style={{ marginTop: 10, display: "grid", gap: 8 }}>
+                  <button type="button" className="solid-btn" onClick={startChatGPTAuth} disabled={authAssistantBusy}>
+                    {authAssistantBusy ? "Preparing..." : "Connect ChatGPT in Browser"}
+                  </button>
+                  {authFlowUrl && (
+                    <>
+                      <label className="label">Open this URL in your logged-in ChatGPT browser</label>
+                      <textarea
+                        className="input"
+                        style={{ minHeight: 70, resize: "vertical", fontSize: "0.78rem", fontFamily: "var(--font-mono, monospace)" }}
+                        readOnly
+                        value={authFlowUrl}
+                      />
+                      <label className="label">Paste the full localhost callback URL</label>
+                      <textarea
+                        className="input"
+                        style={{ minHeight: 70, resize: "vertical", fontSize: "0.78rem", fontFamily: "var(--font-mono, monospace)" }}
+                        placeholder="http://localhost:1455/callback?code=...&state=..."
+                        value={authCallbackUrl}
+                        onChange={(e) => setAuthCallbackUrl(e.target.value)}
+                      />
+                      <button type="button" className="solid-btn" onClick={finishChatGPTAuth} disabled={authAssistantBusy || !authFlowToken || !authCallbackUrl.trim()}>
+                        {authAssistantBusy ? "Exchanging..." : "Capture ChatGPT Session"}
+                      </button>
+                    </>
+                  )}
+                </div>
+              )}
+              {provider === "claude_token" && (
+                <div style={{ marginTop: 10, display: "grid", gap: 8 }}>
+                  <label className="label">Paste a Claude session string</label>
+                  <textarea
+                    className="input"
+                    style={{ minHeight: 70, resize: "vertical", fontSize: "0.78rem", fontFamily: "var(--font-mono, monospace)" }}
+                    placeholder="sessionKey=... or the raw sessionKey value"
+                    value={authAssistantInput}
+                    onChange={(e) => setAuthAssistantInput(e.target.value)}
+                  />
+                  <button type="button" className="solid-btn" onClick={extractClaudeCredential} disabled={authAssistantBusy || !(authAssistantInput || providerApiKey).trim()}>
+                    {authAssistantBusy ? "Extracting..." : "Use Claude Session Key"}
+                  </button>
+                  <p className="muted" style={{ fontSize: "0.75rem", margin: 0 }}>
+                    If Claude is already open in your browser, copy the `sessionKey` cookie value or any cookie string containing `sessionKey=...`, then use this helper.
+                  </p>
+                </div>
+              )}
+              {authAssistantSuccess && (
+                <div className="status ok" style={{ marginTop: 10 }}>{authAssistantSuccess}</div>
+              )}
+              {authAssistantError && (
+                <div className="status err" style={{ marginTop: 10 }}>{authAssistantError}</div>
+              )}
             </div>
           )}
 

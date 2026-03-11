@@ -88,7 +88,7 @@ Common examples:
 
 ## Startup Sequence
 
-1. `start.sh` runs with `neuralclaw==0.7.5`
+1. `start.sh` runs with `neuralclaw==0.7.7`
 2. Writes `~/.neuralclaw/mesh-peers.json` if `NEURALCLAW_MESH_PEERS_JSON` is set
 3. Writes `~/.neuralclaw/knowledge.txt` if `NEURALCLAW_KNOWLEDGE_CONTENT` is set
 4. Imports `CHATGPT_TOKEN` / `CLAUDE_SESSION_KEY` into NeuralClaw's token store when provided
@@ -168,7 +168,7 @@ If the target agent is in the peer list and not blocked, `MeshAwareGateway` POST
 
 These are runtime compatibility behaviors carried by `mesh_gateway.py`:
 
-The old `ToolCall.to_dict()` OpenAI patch is no longer required in `neuralclaw==0.7.5`; the package now handles JSON-string tool arguments upstream.
+The old `ToolCall.to_dict()` OpenAI patch is no longer required in `neuralclaw==0.7.7`; the package now handles JSON-string tool arguments upstream.
 
 ### 1. `ToolCall.to_dict` — OpenAI multi-turn tool use
 OpenAI requires `function.arguments` to be a JSON **string**, not a Python dict.
