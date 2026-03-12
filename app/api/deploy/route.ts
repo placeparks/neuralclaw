@@ -94,6 +94,13 @@ export async function POST(req: Request) {
     const hasExplicitToolSelection = Array.isArray(body.enabledTools);
     const allowedTools = (body.enabledTools ?? []).filter((t) => typeof t === "string" && t.trim().length > 0);
     const customEnv: Record<string, string> = {};
+    const hasSlackChannel = body.channels.some((channel) => channel.channel === "slack");
+
+    if (hasSlackChannel) {
+      customEnv.NEURALCLAW_SLACK_VOICE_ENABLED = "true";
+      customEnv.NEURALCLAW_SLACK_VOICE_REPLY_WITH_TEXT = "true";
+    }
+
     if (body.voice?.enabled) {
       if (hasExplicitToolSelection && !allowedTools.includes("place_call")) {
         allowedTools.push("place_call");
