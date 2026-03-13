@@ -95,10 +95,16 @@ export async function POST(req: Request) {
     const allowedTools = (body.enabledTools ?? []).filter((t) => typeof t === "string" && t.trim().length > 0);
     const customEnv: Record<string, string> = {};
     const hasSlackChannel = body.channels.some((channel) => channel.channel === "slack");
+    const hasDiscordChannel = body.channels.some((channel) => channel.channel === "discord");
 
     if (hasSlackChannel) {
       customEnv.NEURALCLAW_SLACK_VOICE_ENABLED = "true";
       customEnv.NEURALCLAW_SLACK_VOICE_REPLY_WITH_TEXT = "true";
+    }
+
+    if (hasDiscordChannel) {
+      customEnv.NEURALCLAW_DISCORD_VOICE_ENABLED = "true";
+      customEnv.NEURALCLAW_DISCORD_VOICE_REPLY_WITH_TEXT = "true";
     }
 
     if (body.voice?.enabled) {
