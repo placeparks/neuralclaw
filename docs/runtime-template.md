@@ -88,12 +88,13 @@ Common examples:
 
 ## Startup Sequence
 
-1. `start.sh` runs with `neuralclaw==0.7.7`
+1. `start.sh` runs with `neuralclaw==0.8.0`
 2. Writes `~/.neuralclaw/mesh-peers.json` if `NEURALCLAW_MESH_PEERS_JSON` is set
 3. Writes `~/.neuralclaw/knowledge.txt` if `NEURALCLAW_KNOWLEDGE_CONTENT` is set
 4. Imports `CHATGPT_TOKEN` / `CLAUDE_SESSION_KEY` into NeuralClaw's token store when provided
 5. Generates `~/.neuralclaw/config.toml` with all settings
-6. `mesh_gateway.py` starts:
+6. Stores durable state under `/data/neuralclaw` when a Railway volume is mounted so memory, traces, sessions, and browser profiles survive restarts
+7. `mesh_gateway.py` starts:
    - Enables `file_ops` for `~/.neuralclaw/` if knowledge file exists
    - Waits `NEURALCLAW_STARTUP_DELAY` seconds (Telegram 409 prevention)
    - Loads config, injects knowledge hint into persona if applicable
@@ -151,7 +152,7 @@ If the target agent is in the peer list and not blocked, `MeshAwareGateway` POST
 
 ---
 
-## Built-in Skills (4 skills / 9 tools)
+## Built-in Skills
 
 | Skill | Tools | Description |
 |---|---|---|
@@ -159,6 +160,8 @@ If the target agent is in the peer list and not blocked, `MeshAwareGateway` POST
 | `calendar` | `create_event`, `list_events`, `delete_event` | SQLite-backed local calendar |
 | `code_exec` | `execute_python` | Sandboxed Python execution, 30s timeout |
 | `file_ops` | `read_file`, `write_file`, `list_directory` | Filesystem access within allowed roots |
+
+`neuralclaw==0.8.0` also adds optional runtime-integrated skills and cortices such as vector memory, identity memory, structured reasoning, browser automation, TTS, Google Workspace, and Microsoft 365. The runtime template installs the package with the new integration extras so those features are available when enabled in config/env.
 
 `file_ops` roots are empty by default (all access denied) unless a knowledge base file exists, in which case `~/.neuralclaw/` is added automatically.
 
@@ -168,7 +171,7 @@ If the target agent is in the peer list and not blocked, `MeshAwareGateway` POST
 
 These are runtime compatibility behaviors carried by `mesh_gateway.py`:
 
-The old `ToolCall.to_dict()` OpenAI patch is no longer required in `neuralclaw==0.7.7`; the package now handles JSON-string tool arguments upstream.
+The old `ToolCall.to_dict()` OpenAI patch is no longer required in `neuralclaw==0.8.0`; the package now handles JSON-string tool arguments upstream.
 
 ### 1. `ToolCall.to_dict` — OpenAI multi-turn tool use
 OpenAI requires `function.arguments` to be a JSON **string**, not a Python dict.

@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { clearStoredUser, getStoredUser } from "@/lib/session-client";
+import { COMPANION_VERSION, COMPANION_WINDOWS_DOWNLOAD } from "@/lib/companion";
 
 type Agent = {
   id: string;
@@ -800,6 +801,8 @@ export default function DashboardPage() {
     totalEvents: Object.values(health).reduce((s, h) => s + (h.eventCount ?? 0), 0),
   }), [agents, health]);
 
+  const hasActiveAgents = agents.some((agent) => agent.status === "active");
+
   if (loading) {
     return (
       <main className="dashboard-wrap">
@@ -855,6 +858,47 @@ export default function DashboardPage() {
         <button className={`switch big ${meshEnabled ? "on" : ""}`} onClick={toggleMeshEnabled} />
       </section>
       {meshError && <div className="status err">{meshError}</div>}
+
+      <section className="card companion-dashboard-card">
+        <div className="companion-dashboard-head">
+          <div>
+            <p className="eyebrow" style={{ marginBottom: 8 }}>Companion</p>
+            <h3 style={{ margin: 0 }}>Connect a real computer to your agents</h3>
+            <p className="muted companion-dashboard-copy">
+              Hosted agents can browse in the cloud. The companion lets them open
+              a visible browser, launch apps, and handle local machine tasks on a
+              paired Windows computer.
+            </p>
+          </div>
+          <span className="pill active">v{COMPANION_VERSION}</span>
+        </div>
+        <div className="companion-dashboard-actions">
+          <a className="solid-btn" href={COMPANION_WINDOWS_DOWNLOAD} download>
+            Download Windows EXE
+          </a>
+          <Link href="/companion" className="ghost-btn">
+            Setup Guide
+          </Link>
+        </div>
+        <div className="companion-dashboard-notes">
+          <div className="companion-note">
+            <strong>Cloud browser</strong>
+            <span>Runs inside Railway for web tasks and hosted sessions.</span>
+          </div>
+          <div className="companion-note">
+            <strong>Local browser</strong>
+            <span>Runs on the user&apos;s device through the companion app.</span>
+          </div>
+          <div className="companion-note">
+            <strong>Agent status</strong>
+            <span>
+              {hasActiveAgents
+                ? "Your active agents are ready for local-device routing once pairing is enabled."
+                : "Deploy an agent first, then add the companion to give it local-device control."}
+            </span>
+          </div>
+        </div>
+      </section>
 
       {/* ── Mesh links ── */}
       <section className="card mesh-manage">

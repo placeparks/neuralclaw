@@ -398,6 +398,99 @@ a { color: inherit; text-decoration: none; }
   color: var(--amber);
 }
 
+.companion-grid {
+  align-items: stretch;
+}
+
+.companion-download-card {
+  background: linear-gradient(160deg, rgba(0, 229, 255, 0.08), rgba(12, 12, 26, 0.92));
+  border-color: rgba(0, 229, 255, 0.18);
+}
+
+.companion-list,
+.companion-steps {
+  display: grid;
+  gap: 12px;
+}
+
+.companion-list-item,
+.companion-step,
+.companion-note {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+  padding: 12px 14px;
+  border: 1px solid rgba(255, 149, 0, 0.12);
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.companion-bullet,
+.companion-step-num {
+  flex: 0 0 auto;
+  width: 26px;
+  height: 26px;
+  border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--font-mono);
+  font-size: 0.74rem;
+  color: #08040A;
+  background: linear-gradient(135deg, var(--amber-glow), var(--amber-strong));
+}
+
+.companion-step p,
+.companion-note span {
+  margin: 0;
+  color: var(--muted);
+  line-height: 1.6;
+}
+
+.companion-note {
+  flex-direction: column;
+  gap: 4px;
+}
+
+.companion-note strong {
+  color: var(--text);
+}
+
+.companion-steps-card {
+  margin-top: 16px;
+}
+
+.companion-dashboard-card {
+  margin-top: 10px;
+  padding: 22px;
+}
+
+.companion-dashboard-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 16px;
+}
+
+.companion-dashboard-copy {
+  max-width: 760px;
+  line-height: 1.65;
+}
+
+.companion-dashboard-actions {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-top: 16px;
+}
+
+.companion-dashboard-notes {
+  margin-top: 16px;
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 10px;
+}
+
 /* ─── Status pills ────────────────────────────────────────────── */
 .pill {
   padding: 3px 10px;
@@ -1021,6 +1114,42 @@ a { color: inherit; text-decoration: none; }
   z-index: 1;
 }
 
+.land-companion-banner {
+  margin: 34px auto 0;
+  max-width: 980px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24px;
+  padding: 22px 24px;
+  border-radius: 22px;
+  border: 1px solid rgba(0, 229, 255, 0.18);
+  background:
+    linear-gradient(160deg, rgba(0, 229, 255, 0.08), rgba(255, 149, 0, 0.06)),
+    rgba(10, 10, 20, 0.72);
+  backdrop-filter: blur(12px);
+  text-align: left;
+}
+
+.land-companion-banner strong {
+  display: block;
+  margin-bottom: 8px;
+  font-size: 1.05rem;
+}
+
+.land-companion-banner p {
+  margin: 0;
+  color: var(--muted);
+  line-height: 1.65;
+}
+
+.land-companion-banner-actions {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
 /* Footer */
 .land-footer {
   position: relative;
@@ -1183,6 +1312,14 @@ a { color: inherit; text-decoration: none; }
   .feature-grid, .marketing-stack, .grid, .kpi-row, .mesh-row, .agents-board {
     grid-template-columns: 1fr;
   }
+  .companion-dashboard-head,
+  .land-companion-banner {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+  .companion-dashboard-notes {
+    grid-template-columns: 1fr;
+  }
   .link-item { flex-direction: column; align-items: flex-start; }
   .land-cortex-grid { grid-template-columns: repeat(2, 1fr); }
   .land-feature-row { grid-template-columns: repeat(2, 1fr); }
@@ -1197,4 +1334,8 @@ a { color: inherit; text-decoration: none; }
   .land-feature-row { grid-template-columns: 1fr; }
   .land-cortex-flow { flex-direction: column; align-items: flex-start; }
   .land-flow-arrow { transform: rotate(90deg); }
+  .land-companion-banner-actions,
+  .companion-dashboard-actions {
+    width: 100%;
+  }
 }

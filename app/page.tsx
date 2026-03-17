@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
+import { COMPANION_WINDOWS_DOWNLOAD } from "@/lib/companion";
 
 const CORTICES = [
   {
@@ -164,6 +165,7 @@ export default function LandingPage() {
           NEURALCLAW
         </div>
         <div className="land-nav-links">
+          <Link href="/companion" className="land-ghost-btn">Companion</Link>
           <Link href="/login" className="land-ghost-btn">Sign in</Link>
           <Link href="/register" className="land-solid-btn">Deploy Agent →</Link>
         </div>
@@ -306,6 +308,7 @@ export default function LandingPage() {
             { label: "6 Channels", desc: "Telegram, Discord, Slack, WhatsApp, Signal, Web Chat — all adapters built-in" },
             { label: "7 Providers", desc: "OpenAI, Anthropic, OpenRouter, Local Ollama, g4f, ChatGPT Session, Claude Session — no API key required for session providers" },
             { label: "Railway Deploy", desc: "One-click cloud provisioning, env injection, live status tracking" },
+            { label: "Desktop Companion", desc: "Let hosted agents open a real local browser, launch apps, and execute device-bound tasks on a paired Windows machine" },
             { label: "Zero-Trust", desc: "Pre-LLM threat screening, policy engine, full audit trail, secrets redacted" },
             { label: "AI Voice Calling", desc: "Twilio-powered outbound AI calls, configurable call persona, confirmation flow" },
             { label: "10 Personalities", desc: "Coder, Marketing Agent, Sales Agent, Support Agent, Research Agent, Analyst and more — or write your own" },
@@ -324,6 +327,23 @@ export default function LandingPage() {
         <p className="land-eyebrow">Ready?</p>
         <h2 className="land-cta-title">Your AI agent empire<br />starts here.</h2>
         <p className="land-cta-sub">Configure, deploy, and forget. Your agents work while you sleep.</p>
+        <div className="land-companion-banner">
+          <div>
+            <strong>Need real browser and desktop control?</strong>
+            <p>
+              Install NeuralClaw Companion to let your Discord and Telegram agents
+              execute tasks on an actual Windows machine.
+            </p>
+          </div>
+          <div className="land-companion-banner-actions">
+            <a href={COMPANION_WINDOWS_DOWNLOAD} className="land-primary-btn" download>
+              Download Companion
+            </a>
+            <Link href="/companion" className="land-secondary-btn">
+              Learn More
+            </Link>
+          </div>
+        </div>
         <div className="land-cta-row" style={{ justifyContent: "center", marginTop: 40 }}>
           <Link href="/register" className="land-primary-btn land-primary-btn-xl">
             Start Building Free →

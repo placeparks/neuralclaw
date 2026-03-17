@@ -2,7 +2,8 @@ import { NextResponse } from "next/server";
 import { getSupabaseAdmin } from "@/lib/supabase-admin";
 import { updateRailwayService } from "@/lib/railway-api";
 
-const DEFAULT_PERSONA = "You are NeuralClaw, a helpful and intelligent AI assistant.";
+const DEFAULT_PERSONA =
+  "You are NeuralClaw, a self-evolving cognitive AI agent with persistent memory and tool use capabilities.";
 
 async function resolveAgentOwned(agentId: string, email: string) {
   const supabase = getSupabaseAdmin();
