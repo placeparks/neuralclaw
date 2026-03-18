@@ -123,6 +123,23 @@ create table if not exists public.agent_knowledge (
   created_at timestamptz not null default now()
 );
 
+create table if not exists public.agent_people (
+  id                 uuid        primary key default gen_random_uuid(),
+  agent_id           uuid        not null references public.agents(id) on delete cascade,
+  user_id            uuid        not null references public.app_users(id) on delete cascade,
+  canonical_name     text        not null,
+  aliases            jsonb       not null default '[]'::jsonb,
+  relationship       text,
+  summary            text,
+  preferences        text,
+  notes              text,
+  channel_identities jsonb       not null default '{}'::jsonb,
+  first_seen_at      timestamptz not null default now(),
+  last_seen_at       timestamptz not null default now(),
+  created_at         timestamptz not null default now(),
+  updated_at         timestamptz not null default now()
+);
+
 create table if not exists public.mesh_links (
   id              uuid            primary key default gen_random_uuid(),
   user_id         uuid            not null references public.app_users(id) on delete cascade,
@@ -159,8 +176,11 @@ create index if not exists idx_agents_user          on public.agents(user_id);
 create index if not exists idx_agents_status        on public.agents(status);
 create index if not exists idx_agent_channels_agent on public.agent_channels(agent_id);
 create index if not exists idx_agent_knowledge      on public.agent_knowledge(agent_id);
+create index if not exists idx_agent_people_agent   on public.agent_people(agent_id, updated_at desc);
 create index if not exists idx_mesh_links_user      on public.mesh_links(user_id);
 create index if not exists idx_events_agent         on public.agent_events(agent_id, created_at desc);
+create unique index if not exists idx_agent_people_name_unique
+  on public.agent_people (agent_id, lower(canonical_name));
 
 -- ── Legacy migration (only runs if old table exists) ─────────
 

@@ -1,6 +1,7 @@
 import { decryptToken } from "@/lib/token-crypto";
 import { getSupabaseAdmin } from "@/lib/supabase-admin";
 import { generateServiceDomain, provisionOnRailway, resolveServiceEndpoint, updateRailwayService } from "@/lib/railway-api";
+import { buildPeopleMemoryContent, type AgentPersonMemory } from "@/lib/people-memory";
 
 type DeploymentRow = {
   id: string;
@@ -185,14 +186,23 @@ async function buildRuntimeVarsForAgent(agentId: string): Promise<{
 async function buildMeshEnvForAgent(userId: string, sourceAgentId: string): Promise<Record<string, string>> {
   const supabase = getSupabaseAdmin();
 
-  const [userResult, agentResult, knowledgeResult] = await Promise.all([
+  const [userResult, agentResult, knowledgeResult, peopleResult] = await Promise.all([
     supabase.from("app_users").select("mesh_enabled").eq("id", userId).single(),
     supabase.from("agents").select("custom_env").eq("id", sourceAgentId).eq("user_id", userId).single(),
     supabase.from("agent_knowledge").select("title, content").eq("agent_id", sourceAgentId).order("created_at", { ascending: true }),
+    supabase
+      .from("agent_people")
+      .select("id, canonical_name, aliases, relationship, summary, preferences, notes, channel_identities, first_seen_at, last_seen_at, created_at, updated_at")
+      .eq("agent_id", sourceAgentId)
+      .eq("user_id", userId)
+      .order("updated_at", { ascending: false }),
   ]);
 
   if (userResult.error || !userResult.data) {
     throw new Error(userResult.error?.message || "Unable to load user mesh settings");
+  }
+  if (peopleResult.error) {
+    throw new Error(peopleResult.error.message || "Unable to load people memory");
   }
 
   const userRow = userResult.data;
@@ -203,11 +213,24 @@ async function buildMeshEnvForAgent(userId: string, sourceAgentId: string): Prom
   const knowledgeContent = knowledgeDocs.length > 0
     ? knowledgeDocs.map((d: { title: string; content: string }) => `=== ${d.title} ===\n${d.content}`).join("\n\n")
     : "";
+  const peopleMemoryContent = buildPeopleMemoryContent(
+    ((peopleResult.data ?? []) as AgentPersonMemory[]).map((person) => ({
+      ...person,
+      aliases: Array.isArray(person.aliases) ? person.aliases : [],
+      channel_identities:
+        person.channel_identities && typeof person.channel_identities === "object"
+          ? (person.channel_identities as Record<string, string>)
+          : {},
+    }))
+  );
+  const combinedKnowledgeContent = [knowledgeContent, peopleMemoryContent]
+    .filter((section) => section.trim().length > 0)
+    .join("\n\n");
 
   const vars: Record<string, string> = {
     NEURALCLAW_MESH_ENABLED: userRow.mesh_enabled ? "true" : "false",
     NEURALCLAW_MESH_PEERS_JSON: "",
-    NEURALCLAW_KNOWLEDGE_CONTENT: knowledgeContent,
+    NEURALCLAW_KNOWLEDGE_CONTENT: combinedKnowledgeContent,
     // Spread custom env vars (user-defined API keys, etc.)
     ...customEnv,
   };

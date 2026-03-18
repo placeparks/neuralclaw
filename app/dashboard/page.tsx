@@ -5,6 +5,12 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { clearStoredUser, getStoredUser } from "@/lib/session-client";
 import { COMPANION_VERSION, COMPANION_WINDOWS_DOWNLOAD } from "@/lib/companion";
+import {
+  formatChannelIdentitiesDraft,
+  parseAliasesDraft,
+  parseChannelIdentitiesDraft,
+  type AgentPersonMemory,
+} from "@/lib/people-memory";
 
 type Agent = {
   id: string;
@@ -250,15 +256,18 @@ export default function DashboardPage() {
   // Per-agent panels
   const [envExpanded, setEnvExpanded] = useState<Set<string>>(new Set());
   const [kbExpanded, setKbExpanded] = useState<Set<string>>(new Set());
+  const [peopleExpanded, setPeopleExpanded] = useState<Set<string>>(new Set());
   const [channelsExpanded, setChannelsExpanded] = useState<Set<string>>(new Set());
   const [monitorExpanded, setMonitorExpanded] = useState<Set<string>>(new Set());
   const [monitorData, setMonitorData] = useState<Record<string, MonitorData>>({});
   const [monitorLoading, setMonitorLoading] = useState<Set<string>>(new Set());
   const [envVars, setEnvVars] = useState<Record<string, Record<string, string>>>({});
   const [knowledgeDocs, setKnowledgeDocs] = useState<Record<string, KnowledgeDoc[]>>({});
+  const [peopleMemory, setPeopleMemory] = useState<Record<string, AgentPersonMemory[]>>({});
   const [agentChannels, setAgentChannels] = useState<Record<string, AgentChannelState[]>>({});
   const [envLoading, setEnvLoading] = useState<Set<string>>(new Set());
   const [kbLoading, setKbLoading] = useState<Set<string>>(new Set());
+  const [peopleLoading, setPeopleLoading] = useState<Set<string>>(new Set());
   const [channelsLoading, setChannelsLoading] = useState<Set<string>>(new Set());
   const [whatsAppState, setWhatsAppState] = useState<Record<string, WhatsAppChannelState>>({});
   const [whatsAppLoading, setWhatsAppLoading] = useState<Set<string>>(new Set());
@@ -269,6 +278,14 @@ export default function DashboardPage() {
   // New knowledge form state per agent
   const [newKbTitle, setNewKbTitle] = useState<Record<string, string>>({});
   const [newKbContent, setNewKbContent] = useState<Record<string, string>>({});
+  const [editingPersonId, setEditingPersonId] = useState<Record<string, string | null>>({});
+  const [newPersonName, setNewPersonName] = useState<Record<string, string>>({});
+  const [newPersonAliases, setNewPersonAliases] = useState<Record<string, string>>({});
+  const [newPersonRelationship, setNewPersonRelationship] = useState<Record<string, string>>({});
+  const [newPersonSummary, setNewPersonSummary] = useState<Record<string, string>>({});
+  const [newPersonPreferences, setNewPersonPreferences] = useState<Record<string, string>>({});
+  const [newPersonNotes, setNewPersonNotes] = useState<Record<string, string>>({});
+  const [newPersonIdentities, setNewPersonIdentities] = useState<Record<string, string>>({});
   const [channelTokens, setChannelTokens] = useState<Record<string, Record<ChannelKey, string>>>({});
   const [panelError, setPanelError] = useState<Record<string, string>>({});
   // Persona panel
@@ -599,6 +616,116 @@ export default function DashboardPage() {
   }
 
   // ── Monitor ───────────────────────────────────────────────
+  function resetPersonDraft(agentId: string) {
+    setEditingPersonId((prev) => ({ ...prev, [agentId]: null }));
+    setNewPersonName((prev) => ({ ...prev, [agentId]: "" }));
+    setNewPersonAliases((prev) => ({ ...prev, [agentId]: "" }));
+    setNewPersonRelationship((prev) => ({ ...prev, [agentId]: "" }));
+    setNewPersonSummary((prev) => ({ ...prev, [agentId]: "" }));
+    setNewPersonPreferences((prev) => ({ ...prev, [agentId]: "" }));
+    setNewPersonNotes((prev) => ({ ...prev, [agentId]: "" }));
+    setNewPersonIdentities((prev) => ({ ...prev, [agentId]: "" }));
+  }
+
+  function loadPersonDraft(agentId: string, person: AgentPersonMemory) {
+    setEditingPersonId((prev) => ({ ...prev, [agentId]: person.id }));
+    setNewPersonName((prev) => ({ ...prev, [agentId]: person.canonical_name }));
+    setNewPersonAliases((prev) => ({ ...prev, [agentId]: person.aliases.join(", ") }));
+    setNewPersonRelationship((prev) => ({ ...prev, [agentId]: person.relationship ?? "" }));
+    setNewPersonSummary((prev) => ({ ...prev, [agentId]: person.summary ?? "" }));
+    setNewPersonPreferences((prev) => ({ ...prev, [agentId]: person.preferences ?? "" }));
+    setNewPersonNotes((prev) => ({ ...prev, [agentId]: person.notes ?? "" }));
+    setNewPersonIdentities((prev) => ({
+      ...prev,
+      [agentId]: formatChannelIdentitiesDraft(person.channel_identities),
+    }));
+  }
+
+  async function loadPeople(agentId: string) {
+    const user = getStoredUser();
+    if (!user) return;
+    setPeopleLoading((s) => new Set(s).add(agentId));
+    const res = await fetch(`/api/agents/${agentId}/people?email=${encodeURIComponent(user.email)}`);
+    if (res.ok) {
+      const data = await res.json();
+      setPeopleMemory((prev) => ({ ...prev, [agentId]: data.people ?? [] }));
+    }
+    setPeopleLoading((s) => { const n = new Set(s); n.delete(agentId); return n; });
+  }
+
+  async function savePerson(agentId: string) {
+    const user = getStoredUser();
+    if (!user) return;
+    const canonicalName = (newPersonName[agentId] ?? "").trim();
+    if (!canonicalName) {
+      setPanelError((p) => ({ ...p, [agentId + "_people"]: "Name is required." }));
+      return;
+    }
+
+    setPanelError((p) => ({ ...p, [agentId + "_people"]: "" }));
+    setPeopleLoading((s) => new Set(s).add(agentId));
+    const res = await fetch(`/api/agents/${agentId}/people`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        email: user.email,
+        personId: editingPersonId[agentId] ?? undefined,
+        canonicalName,
+        aliases: parseAliasesDraft(newPersonAliases[agentId] ?? ""),
+        relationship: (newPersonRelationship[agentId] ?? "").trim() || null,
+        summary: (newPersonSummary[agentId] ?? "").trim() || null,
+        preferences: (newPersonPreferences[agentId] ?? "").trim() || null,
+        notes: (newPersonNotes[agentId] ?? "").trim() || null,
+        channelIdentities: parseChannelIdentitiesDraft(newPersonIdentities[agentId] ?? ""),
+      }),
+    });
+    const data = await res.json();
+    if (res.ok) {
+      const person = data.person as AgentPersonMemory;
+      setPeopleMemory((prev) => {
+        const existing = prev[agentId] ?? [];
+        const filtered = existing.filter((entry) => entry.id !== person.id);
+        return { ...prev, [agentId]: [person, ...filtered] };
+      });
+      resetPersonDraft(agentId);
+    } else {
+      setPanelError((p) => ({ ...p, [agentId + "_people"]: data.error ?? "Failed to save person memory." }));
+    }
+    setPeopleLoading((s) => { const n = new Set(s); n.delete(agentId); return n; });
+  }
+
+  async function deletePerson(agentId: string, personId: string) {
+    const user = getStoredUser();
+    if (!user) return;
+    setPeopleLoading((s) => new Set(s).add(agentId));
+    await fetch(`/api/agents/${agentId}/people`, {
+      method: "DELETE",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email: user.email, personId }),
+    });
+    setPeopleMemory((prev) => ({
+      ...prev,
+      [agentId]: (prev[agentId] ?? []).filter((person) => person.id !== personId),
+    }));
+    if (editingPersonId[agentId] === personId) {
+      resetPersonDraft(agentId);
+    }
+    setPeopleLoading((s) => { const n = new Set(s); n.delete(agentId); return n; });
+  }
+
+  function togglePeoplePanel(agentId: string) {
+    setPeopleExpanded((prev) => {
+      const next = new Set(prev);
+      if (next.has(agentId)) {
+        next.delete(agentId);
+      } else {
+        next.add(agentId);
+        if (!peopleMemory[agentId]) loadPeople(agentId);
+      }
+      return next;
+    });
+  }
+
   async function loadMonitor(agentId: string) {
     const user = getStoredUser();
     if (!user) return;
@@ -944,10 +1071,12 @@ export default function DashboardPage() {
           const isPending = actionPending === agent.id;
           const isEnvOpen = envExpanded.has(agent.id);
           const isKbOpen = kbExpanded.has(agent.id);
+          const isPeopleOpen = peopleExpanded.has(agent.id);
           const isChannelsOpen = channelsExpanded.has(agent.id);
           const isMonitorOpen = monitorExpanded.has(agent.id);
           const agentEnv = envVars[agent.id] ?? {};
           const agentDocs = knowledgeDocs[agent.id] ?? [];
+          const agentPeople = peopleMemory[agent.id] ?? [];
           const agentChannelRows = agentChannels[agent.id] ?? [];
           const channelTokenDrafts = channelTokens[agent.id] ?? ({} as Record<ChannelKey, string>);
           const waState = whatsAppState[agent.id];
@@ -955,6 +1084,7 @@ export default function DashboardPage() {
           const agentMonitor = monitorData[agent.id] ?? { stats: {}, traces: [] };
           const isEnvLoading = envLoading.has(agent.id);
           const isKbLoading = kbLoading.has(agent.id);
+          const isPeopleLoading = peopleLoading.has(agent.id);
           const isChannelsLoading = channelsLoading.has(agent.id);
           const isMonitorLoading = monitorLoading.has(agent.id);
           const isPersonaOpen = personaExpanded.has(agent.id);
@@ -1096,6 +1226,14 @@ export default function DashboardPage() {
                   title="Knowledge Base"
                 >
                   📚 Knowledge
+                </button>
+                <button
+                  className={`ghost-btn ${isPeopleOpen ? "active" : ""}`}
+                  style={{ fontSize: "0.8rem", padding: "6px 12px" }}
+                  onClick={() => togglePeoplePanel(agent.id)}
+                  title="People Memory"
+                >
+                  People
                 </button>
                 <button
                   className={`ghost-btn ${isMonitorOpen ? "active" : ""}`}
@@ -1423,6 +1561,147 @@ export default function DashboardPage() {
                       {panelError[agent.id + "_kb"] && (
                         <p className="status err" style={{ fontSize: "0.78rem", marginTop: 6 }}>
                           {panelError[agent.id + "_kb"]}
+                        </p>
+                      )}
+                    </>
+                  )}
+                </div>
+              )}
+              {isPeopleOpen && (
+                <div className="agent-panel">
+                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
+                    <p className="panel-label" style={{ margin: 0 }}>People Memory</p>
+                    {editingPersonId[agent.id] && (
+                      <button
+                        className="ghost-btn"
+                        style={{ fontSize: "0.75rem", padding: "4px 10px" }}
+                        onClick={() => resetPersonDraft(agent.id)}
+                      >
+                        Cancel Edit
+                      </button>
+                    )}
+                  </div>
+                  <p className="muted" style={{ fontSize: "0.78rem", marginBottom: 10 }}>
+                    Store durable facts about real people so this agent remembers names, identities, preferences, and relationship context across restarts and channels.
+                  </p>
+                  {isPeopleLoading && <p className="muted" style={{ fontSize: "0.8rem" }}>Loading...</p>}
+                  {!isPeopleLoading && (
+                    <>
+                      {agentPeople.length === 0 && (
+                        <p className="muted" style={{ fontSize: "0.8rem" }}>No people saved yet.</p>
+                      )}
+                      {agentPeople.map((person) => (
+                        <div key={person.id} className="kb-item" style={{ gap: 12 }}>
+                          <div style={{ flex: 1 }}>
+                            <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                              <p style={{ margin: 0, fontWeight: 600, fontSize: "0.86rem" }}>{person.canonical_name}</p>
+                              {person.relationship && (
+                                <span className="pill active" style={{ fontSize: "0.62rem" }}>{person.relationship}</span>
+                              )}
+                            </div>
+                            {person.aliases.length > 0 && (
+                              <p className="muted" style={{ margin: "4px 0 0", fontSize: "0.74rem" }}>
+                                Aliases: {person.aliases.join(", ")}
+                              </p>
+                            )}
+                            {person.summary && (
+                              <p className="muted" style={{ margin: "4px 0 0", fontSize: "0.75rem" }}>
+                                {person.summary}
+                              </p>
+                            )}
+                            {Object.keys(person.channel_identities).length > 0 && (
+                              <p className="muted" style={{ margin: "4px 0 0", fontSize: "0.74rem" }}>
+                                Identities: {Object.entries(person.channel_identities).map(([key, value]) => `${key}=${value}`).join(", ")}
+                              </p>
+                            )}
+                          </div>
+                          <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                            <button
+                              className="ghost-btn"
+                              style={{ fontSize: "0.72rem", padding: "4px 10px" }}
+                              onClick={() => loadPersonDraft(agent.id, person)}
+                            >
+                              Edit
+                            </button>
+                            <button
+                              className="ghost-btn"
+                              style={{ fontSize: "0.72rem", padding: "4px 10px", color: "var(--danger)", borderColor: "rgba(255,77,109,0.3)" }}
+                              onClick={() => deletePerson(agent.id, person.id)}
+                            >
+                              Delete
+                            </button>
+                          </div>
+                        </div>
+                      ))}
+                      <div className="people-form-grid">
+                        <input
+                          className="auth-input"
+                          placeholder="Name (required)"
+                          value={newPersonName[agent.id] ?? ""}
+                          onChange={(e) => setNewPersonName((p) => ({ ...p, [agent.id]: e.target.value }))}
+                        />
+                        <input
+                          className="auth-input"
+                          placeholder="Aliases, comma-separated"
+                          value={newPersonAliases[agent.id] ?? ""}
+                          onChange={(e) => setNewPersonAliases((p) => ({ ...p, [agent.id]: e.target.value }))}
+                        />
+                        <input
+                          className="auth-input"
+                          placeholder="Relationship (friend, client, founder, teammate)"
+                          value={newPersonRelationship[agent.id] ?? ""}
+                          onChange={(e) => setNewPersonRelationship((p) => ({ ...p, [agent.id]: e.target.value }))}
+                        />
+                        <textarea
+                          className="auth-input"
+                          style={{ minHeight: 72, resize: "vertical", fontFamily: "var(--font-mono)" }}
+                          placeholder="Summary: who this person is and the most important facts to remember"
+                          value={newPersonSummary[agent.id] ?? ""}
+                          onChange={(e) => setNewPersonSummary((p) => ({ ...p, [agent.id]: e.target.value }))}
+                        />
+                        <textarea
+                          className="auth-input"
+                          style={{ minHeight: 72, resize: "vertical", fontFamily: "var(--font-mono)" }}
+                          placeholder="Preferences: style, tone, favorite tools, dislikes, timezone, language..."
+                          value={newPersonPreferences[agent.id] ?? ""}
+                          onChange={(e) => setNewPersonPreferences((p) => ({ ...p, [agent.id]: e.target.value }))}
+                        />
+                        <textarea
+                          className="auth-input"
+                          style={{ minHeight: 88, resize: "vertical", fontFamily: "var(--font-mono)" }}
+                          placeholder={"Channel identities, one per line\nDiscord: user123\nTelegram: @someone"}
+                          value={newPersonIdentities[agent.id] ?? ""}
+                          onChange={(e) => setNewPersonIdentities((p) => ({ ...p, [agent.id]: e.target.value }))}
+                        />
+                        <textarea
+                          className="auth-input"
+                          style={{ minHeight: 88, resize: "vertical", fontFamily: "var(--font-mono)" }}
+                          placeholder="Notes: active projects, last promises, important details that should survive restarts"
+                          value={newPersonNotes[agent.id] ?? ""}
+                          onChange={(e) => setNewPersonNotes((p) => ({ ...p, [agent.id]: e.target.value }))}
+                        />
+                      </div>
+                      <div style={{ display: "flex", gap: 8, marginTop: 10, flexWrap: "wrap" }}>
+                        <button
+                          className="solid-btn"
+                          style={{ fontSize: "0.8rem", padding: "6px 14px" }}
+                          onClick={() => savePerson(agent.id)}
+                        >
+                          {editingPersonId[agent.id] ? "Update Person Memory" : "+ Save Person Memory"}
+                        </button>
+                        {editingPersonId[agent.id] && (
+                          <button
+                            className="ghost-btn"
+                            style={{ fontSize: "0.8rem", padding: "6px 14px" }}
+                            onClick={() => resetPersonDraft(agent.id)}
+                          >
+                            Clear Form
+                          </button>
+                        )}
+                      </div>
+                      {panelError[agent.id + "_people"] && (
+                        <p className="status err" style={{ fontSize: "0.78rem", marginTop: 6 }}>
+                          {panelError[agent.id + "_people"]}
                         </p>
                       )}
                     </>
