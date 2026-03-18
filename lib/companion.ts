@@ -17,6 +17,6 @@ export const COMPANION_FEATURES = [
 export const COMPANION_SETUP_STEPS = [
   "Download the Windows installer from the dashboard or companion page.",
   "Install NeuralClaw Companion and keep it running in the tray.",
-  "Pair the computer with your agent once the pairing backend is enabled.",
-  "After pairing, hosted agents can route local-browser and desktop tasks to this machine.",
+  "Issue a pairing token in the dashboard, then paste the relay URL and token into the companion app.",
+  "After pairing, hosted agents can route local-browser and local-app tasks to this machine from Telegram, Discord, and other channels.",
 ] as const;

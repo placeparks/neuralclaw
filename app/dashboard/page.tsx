@@ -59,6 +59,34 @@ type AgentChannelState = {
   hasToken: boolean;
 };
 
+type CompanionDevice = {
+  id: string;
+  token_hint: string;
+  device_id: string | null;
+  installation_id: string | null;
+  device_name: string | null;
+  capabilities: string[];
+  status: string;
+  issued_at: string | null;
+  last_seen_at: string | null;
+  expires_at: string | null;
+  revoked_at: string | null;
+  created_at: string | null;
+  updated_at: string | null;
+};
+
+type CompanionState = {
+  agent: {
+    id: string;
+    agent_name: string;
+    railway_service_id: string | null;
+  };
+  relayWsUrl: string;
+  relayHttpUrl: string;
+  devices: CompanionDevice[];
+  error?: string;
+};
+
 type ChannelsApiResponse = {
   channels?: AgentChannelState[];
   error?: string;
@@ -252,6 +280,12 @@ export default function DashboardPage() {
   const [permission, setPermission] = useState<"delegate" | "read_only" | "blocked">("delegate");
   const [health, setHealth] = useState<Record<string, HealthData>>({});
   const [actionPending, setActionPending] = useState<string | null>(null);
+  const [selectedCompanionAgentId, setSelectedCompanionAgentId] = useState("");
+  const [companionState, setCompanionState] = useState<CompanionState | null>(null);
+  const [companionLoading, setCompanionLoading] = useState(false);
+  const [companionIssueLoading, setCompanionIssueLoading] = useState(false);
+  const [issuedCompanionToken, setIssuedCompanionToken] = useState("");
+  const [companionError, setCompanionError] = useState("");
 
   // Per-agent panels
   const [envExpanded, setEnvExpanded] = useState<Set<string>>(new Set());
@@ -913,6 +947,84 @@ export default function DashboardPage() {
     await refresh();
   }
 
+  useEffect(() => {
+    if (agents.length === 0) {
+      setSelectedCompanionAgentId("");
+      setCompanionState(null);
+      return;
+    }
+    const stillExists = agents.some((agent) => agent.id === selectedCompanionAgentId);
+    if (stillExists) {
+      return;
+    }
+    const preferred = agents.find((agent) => agent.status === "active")?.id ?? agents[0].id;
+    setSelectedCompanionAgentId(preferred);
+  }, [agents, selectedCompanionAgentId]);
+
+  async function loadCompanionState(agentId: string) {
+    const user = getStoredUser();
+    if (!user || !agentId) return;
+    setCompanionLoading(true);
+    setCompanionError("");
+    try {
+      const res = await fetch(`/api/agents/${agentId}/companion?email=${encodeURIComponent(user.email)}`);
+      const data = (await res.json()) as CompanionState;
+      if (!res.ok) {
+        setCompanionError(data.error ?? "Failed to load companion state.");
+        return;
+      }
+      setCompanionState(data);
+    } finally {
+      setCompanionLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    if (!selectedCompanionAgentId) return;
+    setIssuedCompanionToken("");
+    loadCompanionState(selectedCompanionAgentId);
+  }, [selectedCompanionAgentId]);
+
+  async function issueCompanionToken() {
+    const user = getStoredUser();
+    if (!user || !selectedCompanionAgentId) return;
+    setCompanionIssueLoading(true);
+    setCompanionError("");
+    try {
+      const res = await fetch(`/api/agents/${selectedCompanionAgentId}/companion`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: user.email }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setCompanionError(data.error ?? "Failed to issue pairing token.");
+        return;
+      }
+      setIssuedCompanionToken(String(data.token || ""));
+      await loadCompanionState(selectedCompanionAgentId);
+    } finally {
+      setCompanionIssueLoading(false);
+    }
+  }
+
+  async function revokeCompanionToken(tokenId: string) {
+    const user = getStoredUser();
+    if (!user || !selectedCompanionAgentId) return;
+    setCompanionError("");
+    const res = await fetch(`/api/agents/${selectedCompanionAgentId}/companion`, {
+      method: "DELETE",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email: user.email, tokenId }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      setCompanionError(data.error ?? "Failed to revoke pairing.");
+      return;
+    }
+    await loadCompanionState(selectedCompanionAgentId);
+  }
+
   const agentNameById = useMemo(() => {
     const m = new Map<string, string>();
     for (const a of agents) m.set(a.id, a.agent_name);
@@ -929,6 +1041,8 @@ export default function DashboardPage() {
   }), [agents, health]);
 
   const hasActiveAgents = agents.some((agent) => agent.status === "active");
+  const selectedCompanionAgent =
+    agents.find((agent) => agent.id === selectedCompanionAgentId) ?? null;
 
   if (loading) {
     return (
@@ -1006,7 +1120,113 @@ export default function DashboardPage() {
           <Link href="/companion" className="ghost-btn">
             Setup Guide
           </Link>
+          {agents.length > 0 && (
+            <select
+              className="select"
+              value={selectedCompanionAgentId}
+              onChange={(e) => setSelectedCompanionAgentId(e.target.value)}
+              style={{ minWidth: 220 }}
+            >
+              {agents.map((agent) => (
+                <option key={agent.id} value={agent.id}>
+                  {agent.agent_name}
+                </option>
+              ))}
+            </select>
+          )}
+          <button
+            className="ghost-btn"
+            onClick={() => selectedCompanionAgentId && loadCompanionState(selectedCompanionAgentId)}
+            disabled={!selectedCompanionAgentId || companionLoading}
+          >
+            {companionLoading ? "Refreshing..." : "Refresh Pairing"}
+          </button>
+          <button
+            className="solid-btn"
+            onClick={issueCompanionToken}
+            disabled={!selectedCompanionAgentId || companionIssueLoading}
+          >
+            {companionIssueLoading ? "Issuing..." : "Issue Pairing Token"}
+          </button>
         </div>
+        {selectedCompanionAgent && (
+          <div className="agent-panel companion-pairing-panel">
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>
+              <div>
+                <p className="panel-label" style={{ margin: 0 }}>
+                  Pairing For {selectedCompanionAgent.agent_name}
+                </p>
+                <p className="muted" style={{ margin: "6px 0 0", fontSize: "0.78rem" }}>
+                  Paste the relay websocket URL into the companion app&apos;s Backend URL field, then paste the pairing token and click Save + Connect.
+                </p>
+              </div>
+              <span className={`pill ${companionState?.devices.some((device) => device.status === "online") ? "active" : "pending"}`}>
+                {companionState?.devices.some((device) => device.status === "online") ? "Companion Online" : "Waiting For Pairing"}
+              </span>
+            </div>
+            <div className="people-form-grid" style={{ marginTop: 12 }}>
+              <input
+                className="auth-input"
+                readOnly
+                value={companionState?.relayWsUrl ?? ""}
+                placeholder="Relay websocket URL"
+              />
+              <input
+                className="auth-input"
+                readOnly
+                value={issuedCompanionToken}
+                placeholder="Issue a pairing token to reveal it here"
+              />
+            </div>
+            {issuedCompanionToken && (
+              <p className="muted" style={{ margin: "8px 0 0", fontSize: "0.76rem" }}>
+                This token is shown once. Put it in the companion app now, then keep the app running in the tray.
+              </p>
+            )}
+            {companionError && (
+              <p className="status err" style={{ marginTop: 10 }}>
+                {companionError}
+              </p>
+            )}
+            <div style={{ marginTop: 14, display: "flex", flexDirection: "column", gap: 8 }}>
+              {(companionState?.devices ?? []).length === 0 && (
+                <p className="muted" style={{ fontSize: "0.8rem", margin: 0 }}>
+                  No computers paired yet.
+                </p>
+              )}
+              {(companionState?.devices ?? []).map((device) => (
+                <div key={device.id} className="kb-item" style={{ gap: 12 }}>
+                  <div style={{ flex: 1 }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                      <p style={{ margin: 0, fontWeight: 600, fontSize: "0.84rem" }}>
+                        {device.device_name || "Unnamed companion"}
+                      </p>
+                      <span className={`pill ${device.status === "online" ? "active" : device.status === "revoked" ? "failed" : "pending"}`}>
+                        {device.status}
+                      </span>
+                    </div>
+                    <p className="muted" style={{ margin: "4px 0 0", fontSize: "0.74rem" }}>
+                      Token: {device.token_hint}
+                      {device.last_seen_at ? ` · Last seen ${ago(device.last_seen_at)}` : ""}
+                    </p>
+                    {device.capabilities.length > 0 && (
+                      <p className="muted" style={{ margin: "4px 0 0", fontSize: "0.74rem" }}>
+                        Capabilities: {device.capabilities.join(", ")}
+                      </p>
+                    )}
+                  </div>
+                  <button
+                    className="ghost-btn"
+                    style={{ fontSize: "0.74rem", padding: "4px 10px", color: "var(--danger)", borderColor: "rgba(255,77,109,0.3)" }}
+                    onClick={() => revokeCompanionToken(device.id)}
+                  >
+                    Revoke
+                  </button>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
         <div className="companion-dashboard-notes">
           <div className="companion-note">
             <strong>Cloud browser</strong>

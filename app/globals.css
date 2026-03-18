@@ -496,6 +496,10 @@ a { color: inherit; text-decoration: none; }
   gap: 10px;
 }
 
+.companion-pairing-panel {
+  margin-top: 18px;
+}
+
 /* ─── Status pills ────────────────────────────────────────────── */
 .pill {
   padding: 3px 10px;

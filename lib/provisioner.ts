@@ -154,6 +154,7 @@ async function buildRuntimeVarsForAgent(agentId: string): Promise<{
   const runtimeProvider = normalizeRuntimeProvider(agent.provider);
 
   const vars: Record<string, string> = {
+    NEURALCLAW_AGENT_ID: agent.id,
     NEURALCLAW_PROVIDER: runtimeProvider,
     NEURALCLAW_MODEL: agent.model,
     NEURALCLAW_PLAN: agent.plan,
@@ -226,11 +227,20 @@ async function buildMeshEnvForAgent(userId: string, sourceAgentId: string): Prom
   const combinedKnowledgeContent = [knowledgeContent, peopleMemoryContent]
     .filter((section) => section.trim().length > 0)
     .join("\n\n");
+  const companionRelayUrl =
+    process.env.COMPANION_RELAY_HTTP_URL ||
+    process.env.NEXT_PUBLIC_COMPANION_RELAY_HTTP_URL ||
+    "";
+  const companionRelaySecret = process.env.COMPANION_RELAY_SHARED_SECRET || "";
+  const companionTaskTimeout = process.env.COMPANION_RELAY_TASK_TIMEOUT || "45";
 
   const vars: Record<string, string> = {
     NEURALCLAW_MESH_ENABLED: userRow.mesh_enabled ? "true" : "false",
     NEURALCLAW_MESH_PEERS_JSON: "",
     NEURALCLAW_KNOWLEDGE_CONTENT: combinedKnowledgeContent,
+    NEURALCLAW_COMPANION_RELAY_URL: companionRelayUrl.replace(/\/+$/, ""),
+    NEURALCLAW_COMPANION_RELAY_SHARED_SECRET: companionRelaySecret,
+    NEURALCLAW_COMPANION_TASK_TIMEOUT: companionTaskTimeout,
     // Spread custom env vars (user-defined API keys, etc.)
     ...customEnv,
   };

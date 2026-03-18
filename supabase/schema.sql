@@ -140,6 +140,25 @@ create table if not exists public.agent_people (
   updated_at         timestamptz not null default now()
 );
 
+create table if not exists public.agent_companion_tokens (
+  id               uuid        primary key default gen_random_uuid(),
+  agent_id         uuid        not null references public.agents(id) on delete cascade,
+  user_id          uuid        not null references public.app_users(id) on delete cascade,
+  token_hash       text        not null unique,
+  token_hint       text        not null,
+  device_id        text,
+  installation_id  text,
+  device_name      text,
+  capabilities     jsonb       not null default '[]'::jsonb,
+  status           text        not null default 'issued',
+  issued_at        timestamptz not null default now(),
+  last_seen_at     timestamptz,
+  expires_at       timestamptz,
+  revoked_at       timestamptz,
+  created_at       timestamptz not null default now(),
+  updated_at       timestamptz not null default now()
+);
+
 create table if not exists public.mesh_links (
   id              uuid            primary key default gen_random_uuid(),
   user_id         uuid            not null references public.app_users(id) on delete cascade,
@@ -177,6 +196,8 @@ create index if not exists idx_agents_status        on public.agents(status);
 create index if not exists idx_agent_channels_agent on public.agent_channels(agent_id);
 create index if not exists idx_agent_knowledge      on public.agent_knowledge(agent_id);
 create index if not exists idx_agent_people_agent   on public.agent_people(agent_id, updated_at desc);
+create index if not exists idx_agent_companion_agent on public.agent_companion_tokens(agent_id, created_at desc);
+create index if not exists idx_agent_companion_user  on public.agent_companion_tokens(user_id, created_at desc);
 create index if not exists idx_mesh_links_user      on public.mesh_links(user_id);
 create index if not exists idx_events_agent         on public.agent_events(agent_id, created_at desc);
 create unique index if not exists idx_agent_people_name_unique
