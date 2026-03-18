@@ -233,6 +233,8 @@ async function buildMeshEnvForAgent(userId: string, sourceAgentId: string): Prom
     "";
   const companionRelaySecret = process.env.COMPANION_RELAY_SHARED_SECRET || "";
   const companionTaskTimeout = process.env.COMPANION_RELAY_TASK_TIMEOUT || "45";
+  const controlBaseUrl = (process.env.DEPLOYMENT_BASE_URL || "").trim().replace(/\/+$/, "");
+  const provisionerSecret = (process.env.PROVISIONER_SECRET || "").trim();
 
   const vars: Record<string, string> = {
     NEURALCLAW_MESH_ENABLED: userRow.mesh_enabled ? "true" : "false",
@@ -241,6 +243,8 @@ async function buildMeshEnvForAgent(userId: string, sourceAgentId: string): Prom
     NEURALCLAW_COMPANION_RELAY_URL: companionRelayUrl.replace(/\/+$/, ""),
     NEURALCLAW_COMPANION_RELAY_SHARED_SECRET: companionRelaySecret,
     NEURALCLAW_COMPANION_TASK_TIMEOUT: companionTaskTimeout,
+    NEURALCLAW_CONTROL_BASE_URL: controlBaseUrl,
+    NEURALCLAW_PROVISIONER_SECRET: provisionerSecret,
     // Spread custom env vars (user-defined API keys, etc.)
     ...customEnv,
   };
