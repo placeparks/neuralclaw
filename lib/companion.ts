@@ -1,7 +1,11 @@
 export const COMPANION_VERSION = "0.1.0";
 
+const DEFAULT_COMPANION_WINDOWS_DOWNLOAD =
+  "https://github.com/placeparks/neuralclaw/releases/latest/download/neuralclaw-companion-setup-0.1.0.exe";
+
 export const COMPANION_WINDOWS_DOWNLOAD =
-  "/downloads/neuralclaw-companion/windows/neuralclaw-companion-setup-0.1.0.exe";
+  process.env.NEXT_PUBLIC_COMPANION_WINDOWS_URL ??
+  DEFAULT_COMPANION_WINDOWS_DOWNLOAD;
 
 export const COMPANION_FEATURES = [
   "Open a real browser on the user's machine",
