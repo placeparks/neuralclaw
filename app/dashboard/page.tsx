@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { clearStoredUser, getStoredUser } from "@/lib/session-client";
 import { COMPANION_VERSION, COMPANION_WINDOWS_DOWNLOAD } from "@/lib/companion";
+import type { AgentCronJob } from "@/lib/cron-jobs";
 import {
   formatChannelIdentitiesDraft,
   parseAliasesDraft,
@@ -159,6 +160,15 @@ type MonitorData = {
   auditStats: Record<string, unknown>;
 };
 
+type CronDraft = {
+  jobId: string | null;
+  name: string;
+  prompt: string;
+  cronExpression: string;
+  timezone: string;
+  enabled: boolean;
+};
+
 const CHANNEL_OPTIONS: Array<{ key: ChannelKey; label: string; placeholder: string }> = [
   { key: "telegram", label: "Telegram", placeholder: "123456:ABC..." },
   { key: "discord", label: "Discord", placeholder: "Discord bot token" },
@@ -182,6 +192,17 @@ const PERSONA_PRESETS: Array<{ key: string; label: string; value: string }> = [
   { key: "hustler", label: "The Hustler", value: "You are an energetic, results-driven assistant. Focus on action, momentum, and outcomes. Keep energy high. Cut through noise." },
   { key: "assistant", label: "The Assistant", value: "You are a warm, professional AI assistant. Be proactive, anticipate needs, and communicate with clarity and care." },
 ];
+
+function createEmptyCronDraft(): CronDraft {
+  return {
+    jobId: null,
+    name: "",
+    prompt: "",
+    cronExpression: "0 9 * * *",
+    timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC",
+    enabled: true,
+  };
+}
 
 function ago(iso: string | null): string {
   if (!iso) return "—";
@@ -393,6 +414,7 @@ function TracingMonitorPanel({
     { label: "Skills", value: formatNumber(s.skills) },
     { label: "Channels", value: formatNumber(s.channels) },
     { label: "Companion", value: s.companion_enabled ? "Enabled" : "Off" },
+    { label: "Scheduler", value: s.cron_enabled ? "Enabled" : "Off" },
     { label: "Traceline", value: s.traceline_enabled ? "Enabled" : "Off" },
     { label: "Audit Records", value: formatNumber(auditStats.audit_total_records) },
     {
@@ -563,6 +585,160 @@ function TracingMonitorPanel({
   );
 }
 
+function CronJobsPanel({
+  jobs,
+  loading,
+  error,
+  draft,
+  onRefresh,
+  onChange,
+  onSave,
+  onEdit,
+  onDelete,
+  onReset,
+}: {
+  jobs: AgentCronJob[];
+  loading: boolean;
+  error?: string;
+  draft: CronDraft;
+  onRefresh: () => void;
+  onChange: (next: Partial<CronDraft>) => void;
+  onSave: () => void;
+  onEdit: (job: AgentCronJob) => void;
+  onDelete: (jobId: string) => void;
+  onReset: () => void;
+}) {
+  return (
+    <div className="agent-panel">
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, marginBottom: 10, flexWrap: "wrap" }}>
+        <div>
+          <p className="panel-label" style={{ margin: 0 }}>Schedules</p>
+          <p className="muted" style={{ margin: "4px 0 0", fontSize: "0.78rem" }}>
+            Built-in cron jobs run inside the agent runtime and produce normal traces, audit records, and failures.
+          </p>
+        </div>
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+          <button className="ghost-btn" style={{ fontSize: "0.75rem", padding: "4px 10px" }} onClick={onRefresh}>
+            Refresh
+          </button>
+          {draft.jobId && (
+            <button className="ghost-btn" style={{ fontSize: "0.75rem", padding: "4px 10px" }} onClick={onReset}>
+              Cancel Edit
+            </button>
+          )}
+        </div>
+      </div>
+
+      <div className="cron-form-grid">
+        <input
+          className="auth-input"
+          placeholder="Job name"
+          value={draft.name}
+          onChange={(e) => onChange({ name: e.target.value })}
+        />
+        <input
+          className="auth-input"
+          placeholder="Cron expression (e.g. 0 9 * * *)"
+          value={draft.cronExpression}
+          onChange={(e) => onChange({ cronExpression: e.target.value })}
+        />
+        <input
+          className="auth-input"
+          placeholder="Timezone (e.g. Asia/Karachi)"
+          value={draft.timezone}
+          onChange={(e) => onChange({ timezone: e.target.value })}
+        />
+        <label className="cron-toggle">
+          <input
+            type="checkbox"
+            checked={draft.enabled}
+            onChange={(e) => onChange({ enabled: e.target.checked })}
+          />
+          Enabled
+        </label>
+        <textarea
+          className="auth-input"
+          style={{ minHeight: 92, resize: "vertical", fontFamily: "var(--font-mono)" }}
+          placeholder="Prompt to run on schedule..."
+          value={draft.prompt}
+          onChange={(e) => onChange({ prompt: e.target.value })}
+        />
+      </div>
+
+      <div style={{ display: "flex", gap: 8, marginTop: 10, flexWrap: "wrap", alignItems: "center" }}>
+        <button className="solid-btn" style={{ fontSize: "0.8rem", padding: "6px 14px" }} onClick={onSave}>
+          {draft.jobId ? "Update Schedule" : "+ Save Schedule"}
+        </button>
+        <span className="muted" style={{ fontSize: "0.74rem" }}>
+          Examples: <code>0 9 * * *</code>, <code>*/30 * * * *</code>, <code>15 8 * * 1-5</code>
+        </span>
+      </div>
+
+      {error ? (
+        <p className="status err" style={{ fontSize: "0.78rem", marginTop: 8 }}>{error}</p>
+      ) : null}
+
+      <div className="cron-list">
+        {loading ? (
+          <p className="muted" style={{ fontSize: "0.8rem" }}>Loading...</p>
+        ) : jobs.length === 0 ? (
+          <p className="muted" style={{ fontSize: "0.8rem" }}>No scheduled jobs yet.</p>
+        ) : (
+          jobs.map((job) => (
+            <div key={job.id} className="cron-item">
+              <div className="cron-item-head">
+                <div>
+                  <strong>{job.name}</strong>
+                  <div className="cron-meta">
+                    <span>{job.cron_expression}</span>
+                    <span>{job.timezone}</span>
+                    <span className={`pill ${job.enabled ? "active" : "pending"}`}>
+                      {job.enabled ? "Enabled" : "Disabled"}
+                    </span>
+                    <span className={`pill ${job.last_status === "completed" ? "active" : job.last_status === "failed" ? "failed" : "pending"}`}>
+                      {job.last_status}
+                    </span>
+                  </div>
+                </div>
+                <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                  <button className="ghost-btn" style={{ fontSize: "0.72rem", padding: "4px 10px" }} onClick={() => onEdit(job)}>
+                    Edit
+                  </button>
+                  <button
+                    className="ghost-btn"
+                    style={{ fontSize: "0.72rem", padding: "4px 10px", color: "var(--danger)", borderColor: "rgba(255,77,109,0.3)" }}
+                    onClick={() => onDelete(job.id)}
+                  >
+                    Delete
+                  </button>
+                </div>
+              </div>
+              <p className="muted" style={{ margin: "8px 0 6px", fontSize: "0.8rem", whiteSpace: "pre-wrap" }}>
+                {job.prompt}
+              </p>
+              <div className="cron-status-row">
+                <span>Last scheduled: {job.last_scheduled_for ? ago(job.last_scheduled_for) : "-"}</span>
+                <span>Started: {job.last_started_at ? ago(job.last_started_at) : "-"}</span>
+                <span>Finished: {job.last_finished_at ? ago(job.last_finished_at) : "-"}</span>
+              </div>
+              {job.last_result_preview ? (
+                <p className="muted" style={{ margin: "6px 0 0", fontSize: "0.76rem" }}>
+                  Result: {job.last_result_preview}
+                </p>
+              ) : null}
+              {job.last_error ? (
+                <p style={{ margin: "6px 0 0", fontSize: "0.76rem", color: "var(--danger, #f85149)" }}>
+                  Error: {job.last_error}
+                </p>
+              ) : null}
+            </div>
+          ))
+        )}
+      </div>
+    </div>
+  );
+}
+
 export default function DashboardPage() {
   const router = useRouter();
   const [agents, setAgents] = useState<Agent[]>([]);
@@ -588,7 +764,11 @@ export default function DashboardPage() {
   const [kbExpanded, setKbExpanded] = useState<Set<string>>(new Set());
   const [peopleExpanded, setPeopleExpanded] = useState<Set<string>>(new Set());
   const [channelsExpanded, setChannelsExpanded] = useState<Set<string>>(new Set());
+  const [cronExpanded, setCronExpanded] = useState<Set<string>>(new Set());
   const [monitorExpanded, setMonitorExpanded] = useState<Set<string>>(new Set());
+  const [cronJobs, setCronJobs] = useState<Record<string, AgentCronJob[]>>({});
+  const [cronLoading, setCronLoading] = useState<Set<string>>(new Set());
+  const [cronDrafts, setCronDrafts] = useState<Record<string, CronDraft>>({});
   const [monitorData, setMonitorData] = useState<Record<string, MonitorData>>({});
   const [monitorLoading, setMonitorLoading] = useState<Set<string>>(new Set());
   const [envVars, setEnvVars] = useState<Record<string, Record<string, string>>>({});
@@ -1051,6 +1231,117 @@ export default function DashboardPage() {
       } else {
         next.add(agentId);
         if (!peopleMemory[agentId]) loadPeople(agentId);
+      }
+      return next;
+    });
+  }
+
+  function resetCronDraft(agentId: string) {
+    setCronDrafts((prev) => ({ ...prev, [agentId]: createEmptyCronDraft() }));
+  }
+
+  function loadCronDraft(agentId: string, job: AgentCronJob) {
+    setCronDrafts((prev) => ({
+      ...prev,
+      [agentId]: {
+        jobId: job.id,
+        name: job.name,
+        prompt: job.prompt,
+        cronExpression: job.cron_expression,
+        timezone: job.timezone,
+        enabled: job.enabled,
+      },
+    }));
+  }
+
+  async function loadCron(agentId: string) {
+    const user = getStoredUser();
+    if (!user) return;
+    setCronLoading((s) => new Set(s).add(agentId));
+    try {
+      const res = await fetch(`/api/agents/${agentId}/cron?email=${encodeURIComponent(user.email)}`);
+      const data = await res.json();
+      if (res.ok) {
+        setCronJobs((prev) => ({ ...prev, [agentId]: data.jobs ?? [] }));
+        setCronDrafts((prev) => ({ ...prev, [agentId]: prev[agentId] ?? createEmptyCronDraft() }));
+      } else {
+        setPanelError((p) => ({ ...p, [agentId + "_cron"]: data.error ?? "Failed to load schedules." }));
+      }
+    } finally {
+      setCronLoading((s) => { const n = new Set(s); n.delete(agentId); return n; });
+    }
+  }
+
+  async function saveCron(agentId: string) {
+    const user = getStoredUser();
+    if (!user) return;
+    const draft = cronDrafts[agentId] ?? createEmptyCronDraft();
+    setCronLoading((s) => new Set(s).add(agentId));
+    setPanelError((p) => ({ ...p, [agentId + "_cron"]: "" }));
+    try {
+      const res = await fetch(`/api/agents/${agentId}/cron`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          email: user.email,
+          jobId: draft.jobId ?? undefined,
+          name: draft.name,
+          prompt: draft.prompt,
+          cronExpression: draft.cronExpression,
+          timezone: draft.timezone,
+          enabled: draft.enabled,
+        }),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        const job = data.job as AgentCronJob;
+        setCronJobs((prev) => {
+          const existing = prev[agentId] ?? [];
+          const filtered = existing.filter((entry) => entry.id !== job.id);
+          return { ...prev, [agentId]: [job, ...filtered] };
+        });
+        resetCronDraft(agentId);
+      } else {
+        setPanelError((p) => ({ ...p, [agentId + "_cron"]: data.error ?? "Failed to save schedule." }));
+      }
+    } finally {
+      setCronLoading((s) => { const n = new Set(s); n.delete(agentId); return n; });
+    }
+  }
+
+  async function deleteCron(agentId: string, jobId: string) {
+    const user = getStoredUser();
+    if (!user) return;
+    setCronLoading((s) => new Set(s).add(agentId));
+    try {
+      await fetch(`/api/agents/${agentId}/cron`, {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: user.email, jobId }),
+      });
+      setCronJobs((prev) => ({
+        ...prev,
+        [agentId]: (prev[agentId] ?? []).filter((job) => job.id !== jobId),
+      }));
+      if ((cronDrafts[agentId] ?? createEmptyCronDraft()).jobId === jobId) {
+        resetCronDraft(agentId);
+      }
+    } finally {
+      setCronLoading((s) => { const n = new Set(s); n.delete(agentId); return n; });
+    }
+  }
+
+  function toggleCronPanel(agentId: string) {
+    setCronExpanded((prev) => {
+      const next = new Set(prev);
+      if (next.has(agentId)) {
+        next.delete(agentId);
+      } else {
+        next.add(agentId);
+        if (!cronJobs[agentId]) loadCron(agentId);
+        if (!cronDrafts[agentId]) {
+          setCronDrafts((draftPrev) => ({ ...draftPrev, [agentId]: createEmptyCronDraft() }));
+        }
       }
       return next;
     });
@@ -1605,14 +1896,18 @@ async function loadMonitor(agentId: string) {
           const channelTokenDrafts = channelTokens[agent.id] ?? ({} as Record<ChannelKey, string>);
           const waState = whatsAppState[agent.id];
           const waLoading = whatsAppLoading.has(agent.id);
+          const agentCronJobs = cronJobs[agent.id] ?? [];
           const agentMonitor = monitorData[agent.id] ?? { stats: {}, traces: [], audit: [], auditStats: {} };
           const isEnvLoading = envLoading.has(agent.id);
           const isKbLoading = kbLoading.has(agent.id);
           const isPeopleLoading = peopleLoading.has(agent.id);
           const isChannelsLoading = channelsLoading.has(agent.id);
+          const isCronOpen = cronExpanded.has(agent.id);
+          const isCronLoading = cronLoading.has(agent.id);
           const isMonitorLoading = monitorLoading.has(agent.id);
           const isPersonaOpen = personaExpanded.has(agent.id);
           const isPersonaLoading = personaLoading.has(agent.id);
+          const cronDraft = cronDrafts[agent.id] ?? createEmptyCronDraft();
 
           return (
             <article className="agent-card" key={agent.id}>
@@ -1758,6 +2053,14 @@ async function loadMonitor(agentId: string) {
                   title="People Memory"
                 >
                   People
+                </button>
+                <button
+                  className={`ghost-btn ${isCronOpen ? "active" : ""}`}
+                  style={{ fontSize: "0.8rem", padding: "6px 12px" }}
+                  onClick={() => toggleCronPanel(agent.id)}
+                  title="Scheduled Jobs"
+                >
+                  Schedules
                 </button>
                 <button
                   className={`ghost-btn ${isMonitorOpen ? "active" : ""}`}
@@ -2231,6 +2534,28 @@ async function loadMonitor(agentId: string) {
                     </>
                   )}
                 </div>
+              )}
+              {isCronOpen && (
+                <CronJobsPanel
+                  jobs={agentCronJobs}
+                  loading={isCronLoading}
+                  error={panelError[agent.id + "_cron"]}
+                  draft={cronDraft}
+                  onRefresh={() => loadCron(agent.id)}
+                  onChange={(next) =>
+                    setCronDrafts((prev) => ({
+                      ...prev,
+                      [agent.id]: {
+                        ...(prev[agent.id] ?? createEmptyCronDraft()),
+                        ...next,
+                      },
+                    }))
+                  }
+                  onSave={() => saveCron(agent.id)}
+                  onEdit={(job) => loadCronDraft(agent.id, job)}
+                  onDelete={(jobId) => deleteCron(agent.id, jobId)}
+                  onReset={() => resetCronDraft(agent.id)}
+                />
               )}
               {/* ── Monitor Panel ── */}
               {isMonitorOpen && (

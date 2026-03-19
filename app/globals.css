@@ -398,6 +398,44 @@ a { color: inherit; text-decoration: none; }
   display: grid;
   gap: 8px;
 }
+.cron-form-grid {
+  margin-top: 12px;
+  display: grid;
+  gap: 8px;
+}
+.cron-list {
+  margin-top: 14px;
+  display: grid;
+  gap: 10px;
+}
+.cron-item {
+  border: 1px solid rgba(255,255,255,0.08);
+  border-radius: 12px;
+  padding: 12px;
+  background: rgba(255,255,255,0.03);
+}
+.cron-item-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+}
+.cron-meta,
+.cron-status-row {
+  display: flex;
+  gap: 8px 12px;
+  flex-wrap: wrap;
+  margin-top: 6px;
+  font-size: 0.74rem;
+  color: var(--muted);
+}
+.cron-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.78rem;
+  color: var(--muted);
+}
 .ghost-btn.active {
   border-color: rgba(255, 149, 0, 0.5);
   color: var(--amber);
