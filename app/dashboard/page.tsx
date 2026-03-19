@@ -135,22 +135,27 @@ type TracelineEntry = {
 };
 
 type AuditEntry = {
-  timestamp: number;
-  request_id: string;
-  skill_name: string;
-  action: string;
-  args_preview: string;
-  result_preview: string;
-  allowed: boolean;
-  denied_reason: string;
-  success: boolean;
-  execution_time_ms: number;
-  user_id: string;
-  channel_id: string;
-  platform: string;
-  capabilities_used: string[];
-  signal_id: string;
-  correlation_id: string;
+  timestamp: number | string;
+  request_id?: string;
+  skill_name?: string;
+  action?: string;
+  args_preview?: string;
+  result_preview?: string;
+  allowed?: boolean;
+  denied_reason?: string;
+  success?: boolean;
+  execution_time_ms?: number;
+  user_id?: string;
+  channel_id?: string;
+  platform?: string;
+  capabilities_used?: string[];
+  signal_id?: string;
+  correlation_id?: string;
+  action_type?: string;
+  tool_name?: string;
+  status?: string;
+  outcome?: string;
+  message?: string;
 };
 
 type MonitorData = {
@@ -166,6 +171,8 @@ type CronDraft = {
   prompt: string;
   cronExpression: string;
   timezone: string;
+  runOnceAt: string;
+  deleteAfterRun: boolean;
   enabled: boolean;
 };
 
@@ -195,11 +202,13 @@ const PERSONA_PRESETS: Array<{ key: string; label: string; value: string }> = [
 
 function createEmptyCronDraft(): CronDraft {
   return {
-    jobId: null,
+    jobId: "",
     name: "",
     prompt: "",
-    cronExpression: "0 9 * * *",
+    cronExpression: "",
     timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC",
+    runOnceAt: "",
+    deleteAfterRun: false,
     enabled: true,
   };
 }
@@ -335,6 +344,35 @@ function MonitorPanel({
                   [{t.category?.toUpperCase() ?? ""}]
                 </span>
                 <span>{t.message}</span>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      <p className="panel-label" style={{ margin: "14px 0 8px", fontSize: "0.75rem" }}>
+        Recent Audit
+      </p>
+      {data.audit.length === 0 ? (
+        <p className="muted" style={{ fontSize: "0.78rem" }}>No audit entries yet.</p>
+      ) : (
+        <div style={{ maxHeight: 220, overflowY: "auto", display: "flex", flexDirection: "column", gap: 4 }}>
+          {data.audit.map((entry, i) => {
+            const status = String(entry.status ?? entry.outcome ?? "");
+            const label = String(entry.tool_name ?? entry.action_type ?? entry.action ?? "event");
+            const tsValue = entry.timestamp ?? 0;
+            const ts = typeof tsValue === "number" ? new Date(tsValue * 1000) : new Date(tsValue);
+            const color = status.toLowerCase().includes("fail") ? "var(--danger, #f85149)" : "var(--muted)";
+            return (
+              <div key={i} style={{ padding: "6px 8px", borderRadius: 6, background: "rgba(255,255,255,0.02)", border: "1px solid rgba(255,255,255,0.06)", fontSize: "0.76rem" }}>
+                <div style={{ display: "flex", justifyContent: "space-between", gap: 8 }}>
+                  <strong>{label}</strong>
+                  <span style={{ color }}>{status || "logged"}</span>
+                </div>
+                <div className="muted" style={{ marginTop: 4 }}>
+                  {Number.isNaN(ts.getTime()) ? "" : ts.toLocaleString()}
+                  {entry.message ? ` ? ${entry.message}` : ""}
+                </div>
               </div>
             );
           })}
@@ -556,7 +594,7 @@ function TracingMonitorPanel({
                     <span style={{ fontWeight: 700 }}>
                       {record.action} / {record.skill_name || "core"}
                     </span>
-                    <span className="muted" style={{ fontSize: "0.74rem" }}>{formatTimestamp(record.timestamp)}</span>
+                    <span className="muted" style={{ fontSize: "0.74rem" }}>{typeof record.timestamp === "number" ? formatTimestamp(record.timestamp) : String(record.timestamp ?? "")}</span>
                   </div>
                   <div style={{ display: "flex", gap: 12, flexWrap: "wrap", marginBottom: 8, fontSize: "0.74rem" }}>
                     <span style={{ color: record.allowed ? "var(--ok, #3fb950)" : "var(--danger, #f85149)" }}>
@@ -1247,8 +1285,10 @@ export default function DashboardPage() {
         jobId: job.id,
         name: job.name,
         prompt: job.prompt,
-        cronExpression: job.cron_expression,
+        cronExpression: job.cron_expression ?? "",
         timezone: job.timezone,
+        runOnceAt: job.run_once_at ? job.run_once_at.slice(0, 16) : "",
+        deleteAfterRun: job.delete_after_run,
         enabled: job.enabled,
       },
     }));
@@ -1284,23 +1324,20 @@ export default function DashboardPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           email: user.email,
-          jobId: draft.jobId ?? undefined,
+          jobId: draft.jobId || undefined,
           name: draft.name,
           prompt: draft.prompt,
           cronExpression: draft.cronExpression,
           timezone: draft.timezone,
+          runOnceAt: draft.runOnceAt,
+          deleteAfterRun: draft.deleteAfterRun,
           enabled: draft.enabled,
         }),
       });
       const data = await res.json();
       if (res.ok) {
-        const job = data.job as AgentCronJob;
-        setCronJobs((prev) => {
-          const existing = prev[agentId] ?? [];
-          const filtered = existing.filter((entry) => entry.id !== job.id);
-          return { ...prev, [agentId]: [job, ...filtered] };
-        });
         resetCronDraft(agentId);
+        await loadCron(agentId);
       } else {
         setPanelError((p) => ({ ...p, [agentId + "_cron"]: data.error ?? "Failed to save schedule." }));
       }
@@ -1383,7 +1420,7 @@ async function loadMonitor(agentId: string) {
     });
   }
 
-  // ── Persona ───────────────────────────────────────────────
+
   async function loadPersona(agentId: string) {
     const user = getStoredUser();
     if (!user) return;
@@ -1712,9 +1749,9 @@ async function loadMonitor(agentId: string) {
           <a className="solid-btn" href={COMPANION_WINDOWS_DOWNLOAD} download>
             Download Windows EXE
           </a>
-          <Link href="/companion" className="ghost-btn">
+          <a href="/companion" className="ghost-btn">
             Setup Guide
-          </Link>
+          </a>
           {agents.length > 0 && (
             <select
               className="select"
@@ -1889,6 +1926,7 @@ async function loadMonitor(agentId: string) {
           const isPeopleOpen = peopleExpanded.has(agent.id);
           const isChannelsOpen = channelsExpanded.has(agent.id);
           const isMonitorOpen = monitorExpanded.has(agent.id);
+          const isCronOpen = cronExpanded.has(agent.id);
           const agentEnv = envVars[agent.id] ?? {};
           const agentDocs = knowledgeDocs[agent.id] ?? [];
           const agentPeople = peopleMemory[agent.id] ?? [];
@@ -1902,12 +1940,11 @@ async function loadMonitor(agentId: string) {
           const isKbLoading = kbLoading.has(agent.id);
           const isPeopleLoading = peopleLoading.has(agent.id);
           const isChannelsLoading = channelsLoading.has(agent.id);
-          const isCronOpen = cronExpanded.has(agent.id);
           const isCronLoading = cronLoading.has(agent.id);
           const isMonitorLoading = monitorLoading.has(agent.id);
+          const cronDraft = cronDrafts[agent.id] ?? createEmptyCronDraft();
           const isPersonaOpen = personaExpanded.has(agent.id);
           const isPersonaLoading = personaLoading.has(agent.id);
-          const cronDraft = cronDrafts[agent.id] ?? createEmptyCronDraft();
 
           return (
             <article className="agent-card" key={agent.id}>

@@ -165,7 +165,7 @@ export default function LandingPage() {
           NEURALCLAW
         </div>
         <div className="land-nav-links">
-          <Link href="/companion" className="land-ghost-btn">Companion</Link>
+          <a href="/companion" className="land-ghost-btn">Companion</a>
           <Link href="/login" className="land-ghost-btn">Sign in</Link>
           <Link href="/register" className="land-solid-btn">Deploy Agent →</Link>
         </div>
@@ -339,9 +339,9 @@ export default function LandingPage() {
             <a href={COMPANION_WINDOWS_DOWNLOAD} className="land-primary-btn" download>
               Download Companion
             </a>
-            <Link href="/companion" className="land-secondary-btn">
+            <a href="/companion" className="land-secondary-btn">
               Learn More
-            </Link>
+            </a>
           </div>
         </div>
         <div className="land-cta-row" style={{ justifyContent: "center", marginTop: 40 }}>

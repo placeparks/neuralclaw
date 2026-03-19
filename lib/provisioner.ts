@@ -181,6 +181,15 @@ async function buildRuntimeVarsForAgent(agentId: string): Promise<{
     vars[providerEnv] = decryptToken(agent.provider_api_key_encrypted);
   }
 
+  const controlBaseUrl = process.env.NEURALCLAW_CONTROL_BASE_URL || process.env.DEPLOYMENT_BASE_URL || "";
+  if (controlBaseUrl) {
+    vars.NEURALCLAW_CONTROL_BASE_URL = controlBaseUrl;
+  }
+  const provisionerSecret = process.env.PROVISIONER_SECRET || "";
+  if (provisionerSecret) {
+    vars.NEURALCLAW_PROVISIONER_SECRET = provisionerSecret;
+  }
+
   return { vars, serviceId: agent.railway_service_id };
 }
 
@@ -398,6 +407,15 @@ async function processOne(deployment: DeploymentRow) {
   const providerEnv = providerKeyEnvName(deployment.provider);
   if (providerEnv && deployment.provider_api_key_encrypted) {
     vars[providerEnv] = decryptToken(deployment.provider_api_key_encrypted);
+  }
+
+  const controlBaseUrl = process.env.NEURALCLAW_CONTROL_BASE_URL || process.env.DEPLOYMENT_BASE_URL || "";
+  if (controlBaseUrl) {
+    vars.NEURALCLAW_CONTROL_BASE_URL = controlBaseUrl;
+  }
+  const provisionerSecret = process.env.PROVISIONER_SECRET || "";
+  if (provisionerSecret) {
+    vars.NEURALCLAW_PROVISIONER_SECRET = provisionerSecret;
   }
 
   const provisioned = await provisionOnRailway({

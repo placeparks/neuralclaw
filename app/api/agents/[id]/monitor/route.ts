@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { getSupabaseAdmin } from "@/lib/supabase-admin";
 
 // GET /api/agents/[id]/monitor?email=...
-// Proxies /api/stats and /api/traces from the agent's Railway domain.
+// Proxies /api/stats, /api/traces, and /api/audit from the agent's Railway domain.
 export async function GET(
   req: Request,
   { params }: { params: { id: string } }
@@ -31,7 +31,7 @@ export async function GET(
     if (!agent) return NextResponse.json({ error: "Agent not found" }, { status: 404 });
 
     if (!agent.railway_domain) {
-      return NextResponse.json({ stats: {}, traces: [] });
+      return NextResponse.json({ stats: {}, traces: [], audit: [], auditStats: {} });
     }
 
     const domain = agent.railway_domain;
@@ -56,7 +56,12 @@ export async function GET(
         ? await auditRes.value.json()
         : { records: [], stats: {} };
 
-    return NextResponse.json({ stats, traces, audit: audit.records ?? [], auditStats: audit.stats ?? {} });
+    return NextResponse.json({
+      stats,
+      traces,
+      audit: audit.records ?? [],
+      auditStats: audit.stats ?? {},
+    });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Unexpected error";
     return NextResponse.json({ error: message }, { status: 500 });

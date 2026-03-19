@@ -199,6 +199,36 @@ create table if not exists public.agent_events (
   created_at timestamptz not null default now()
 );
 
+create table if not exists public.agent_cron_jobs (
+  id                  uuid        primary key default gen_random_uuid(),
+  agent_id            uuid        not null references public.agents(id) on delete cascade,
+  user_id             uuid        not null references public.app_users(id) on delete cascade,
+  name                text        not null,
+  prompt              text        not null,
+  cron_expression     text,
+  timezone            text        not null default 'UTC',
+  run_once_at         timestamptz,
+  delete_after_run    boolean     not null default false,
+  delivery_channel    text,
+  delivery_channel_id text,
+  delivery_author_id  text,
+  delivery_author_name text,
+  enabled             boolean     not null default true,
+  last_scheduled_for  timestamptz,
+  last_started_at     timestamptz,
+  last_finished_at    timestamptz,
+  last_status         text,
+  last_result_preview text,
+  last_error          text,
+  created_at          timestamptz not null default now(),
+  updated_at          timestamptz not null default now(),
+  constraint agent_cron_jobs_schedule_mode_chk
+    check (
+      (cron_expression is not null and run_once_at is null)
+      or (cron_expression is null and run_once_at is not null)
+    )
+);
+
 -- ── Alter existing tables (idempotent column additions) ──────
 -- Run after CREATE TABLE so the table is guaranteed to exist.
 
@@ -206,6 +236,22 @@ alter table public.app_users  add column if not exists mesh_enabled boolean not 
 alter table public.agents     add column if not exists persona       text;
 alter table public.agents     add column if not exists custom_env    jsonb not null default '{}';
 alter table public.agents     add column if not exists railway_domain text;
+alter table public.agent_cron_jobs add column if not exists cron_expression text;
+alter table public.agent_cron_jobs add column if not exists timezone text not null default 'UTC';
+alter table public.agent_cron_jobs add column if not exists run_once_at timestamptz;
+alter table public.agent_cron_jobs add column if not exists delete_after_run boolean not null default false;
+alter table public.agent_cron_jobs add column if not exists delivery_channel text;
+alter table public.agent_cron_jobs add column if not exists delivery_channel_id text;
+alter table public.agent_cron_jobs add column if not exists delivery_author_id text;
+alter table public.agent_cron_jobs add column if not exists delivery_author_name text;
+alter table public.agent_cron_jobs add column if not exists enabled boolean not null default true;
+alter table public.agent_cron_jobs add column if not exists last_scheduled_for timestamptz;
+alter table public.agent_cron_jobs add column if not exists last_started_at timestamptz;
+alter table public.agent_cron_jobs add column if not exists last_finished_at timestamptz;
+alter table public.agent_cron_jobs add column if not exists last_status text;
+alter table public.agent_cron_jobs add column if not exists last_result_preview text;
+alter table public.agent_cron_jobs add column if not exists last_error text;
+alter table public.agent_cron_jobs add column if not exists updated_at timestamptz not null default now();
 
 -- ── Indexes ──────────────────────────────────────────────────
 
@@ -223,6 +269,7 @@ create index if not exists idx_mesh_links_user      on public.mesh_links(user_id
 create index if not exists idx_events_agent         on public.agent_events(agent_id, created_at desc);
 create unique index if not exists idx_agent_people_name_unique
   on public.agent_people (agent_id, lower(canonical_name));
+create index if not exists idx_agent_cron_jobs_run_once on public.agent_cron_jobs(run_once_at);
 
 -- ── Legacy migration (only runs if old table exists) ─────────
 
