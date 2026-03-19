@@ -100,8 +100,64 @@ type WhatsAppChannelState = {
   reason?: string;
 };
 
-type TraceEntry = { category: string; message: string; timestamp: number };
-type MonitorData = { stats: Record<string, unknown>; traces: TraceEntry[] };
+type ToolTrace = {
+  tool: string;
+  args_preview: string;
+  result_preview: string;
+  duration_ms: number;
+  success: boolean;
+  idempotency_key: string;
+};
+
+type TracelineEntry = {
+  trace_id: string;
+  request_id: string;
+  user_id: string;
+  channel: string;
+  platform: string;
+  input_preview: string;
+  output_preview: string;
+  confidence: number;
+  reasoning_path: string;
+  threat_score: number;
+  memory_hits: number;
+  tool_calls: ToolTrace[];
+  total_tool_calls: number;
+  tokens_used: number;
+  cost_usd: number;
+  duration_ms: number;
+  timestamp: number;
+  error: string;
+  tags: string[];
+  category?: string;
+  message?: string;
+};
+
+type AuditEntry = {
+  timestamp: number;
+  request_id: string;
+  skill_name: string;
+  action: string;
+  args_preview: string;
+  result_preview: string;
+  allowed: boolean;
+  denied_reason: string;
+  success: boolean;
+  execution_time_ms: number;
+  user_id: string;
+  channel_id: string;
+  platform: string;
+  capabilities_used: string[];
+  signal_id: string;
+  correlation_id: string;
+};
+
+type MonitorData = {
+  stats: Record<string, unknown>;
+  traces: TracelineEntry[];
+  audit: AuditEntry[];
+  auditStats: Record<string, unknown>;
+};
 
 const CHANNEL_OPTIONS: Array<{ key: ChannelKey; label: string; placeholder: string }> = [
   { key: "telegram", label: "Telegram", placeholder: "123456:ABC..." },
@@ -263,6 +319,246 @@ function MonitorPanel({
           })}
         </div>
       )}
+    </div>
+  );
+}
+
+function TracingMonitorPanel({
+  agentId,
+  data,
+  loading,
+  onRefresh,
+}: {
+  agentId: string;
+  data: MonitorData;
+  loading: boolean;
+  onRefresh: () => void;
+}) {
+  useEffect(() => {
+    const id = setInterval(onRefresh, 10_000);
+    return () => clearInterval(id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [agentId]);
+
+  const s = data.stats as Record<string, unknown>;
+  const auditStats = data.auditStats as Record<string, unknown>;
+
+  const toNumber = (value: unknown): number | null =>
+    typeof value === "number" && Number.isFinite(value) ? value : null;
+  const formatNumber = (value: unknown): string => {
+    const num = toNumber(value);
+    return num === null ? "-" : num.toLocaleString();
+  };
+  const formatUsd = (value: unknown): string => {
+    const num = toNumber(value);
+    return num === null ? "-" : `$${num.toFixed(num < 0.01 ? 4 : 2)}`;
+  };
+  const formatPct = (value: unknown): string => {
+    const num = toNumber(value);
+    return num === null ? "-" : `${(num * 100).toFixed(0)}%`;
+  };
+  const formatMs = (value: unknown): string => {
+    const num = toNumber(value);
+    return num === null ? "-" : `${Math.round(num)} ms`;
+  };
+  const formatTimestamp = (value: number): string => {
+    const ms = value > 1_000_000_000_000 ? value : value * 1000;
+    return new Date(ms).toLocaleString();
+  };
+  const summarize = (value: string | null | undefined, empty = "No data"): string => {
+    const text = (value ?? "").trim();
+    return text ? text : empty;
+  };
+
+  const successRate = toNumber(s.success_rate);
+  const denialRate = toNumber(auditStats.audit_denial_rate);
+  const statCards = [
+    { label: "Provider", value: String(s.provider ?? "-") },
+    { label: "Interactions", value: formatNumber(s.interactions) },
+    {
+      label: "Success Rate",
+      value: formatPct(successRate),
+      color:
+        successRate === null
+          ? undefined
+          : successRate >= 0.9
+          ? "var(--ok, #3fb950)"
+          : successRate >= 0.7
+          ? "var(--amber, #d29922)"
+          : "var(--danger, #f85149)",
+    },
+    { label: "Avg Latency", value: formatMs(s.avg_duration_ms) },
+    { label: "Total Cost", value: formatUsd(s.total_cost_usd) },
+    { label: "Tool Calls", value: formatNumber(s.total_tool_calls) },
+    { label: "Skills", value: formatNumber(s.skills) },
+    { label: "Channels", value: formatNumber(s.channels) },
+    { label: "Companion", value: s.companion_enabled ? "Enabled" : "Off" },
+    { label: "Traceline", value: s.traceline_enabled ? "Enabled" : "Off" },
+    { label: "Audit Records", value: formatNumber(auditStats.audit_total_records) },
+    {
+      label: "Audit Denial Rate",
+      value: formatPct(denialRate),
+      color:
+        denialRate === null
+          ? undefined
+          : denialRate === 0
+          ? "var(--ok, #3fb950)"
+          : denialRate < 0.1
+          ? "var(--amber, #d29922)"
+          : "var(--danger, #f85149)",
+    },
+  ];
+
+  return (
+    <div className="agent-panel">
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
+        <p className="panel-label" style={{ margin: 0 }}>Live Monitor</p>
+        {loading && <span className="muted" style={{ fontSize: "0.75rem" }}>Refreshing...</span>}
+      </div>
+
+      <div
+        style={{
+          display: "grid",
+          gridTemplateColumns: "repeat(auto-fit, minmax(128px, 1fr))",
+          gap: 10,
+          marginBottom: 16,
+        }}
+      >
+        {statCards.map((item) => (
+          <div
+            key={item.label}
+            style={{
+              border: "1px solid rgba(255,255,255,0.08)",
+              borderRadius: 10,
+              padding: "10px 12px",
+              background: "rgba(255,255,255,0.02)",
+            }}
+          >
+            <p className="muted" style={{ margin: 0, fontSize: "0.7rem" }}>{item.label}</p>
+            <p style={{ margin: "6px 0 0", fontWeight: 700, color: item.color }}>{item.value}</p>
+          </div>
+        ))}
+      </div>
+
+      <div style={{ display: "grid", gridTemplateColumns: "1fr", gap: 14 }}>
+        <div>
+          <p className="panel-label" style={{ margin: "0 0 8px", fontSize: "0.75rem" }}>
+            Traceline
+          </p>
+          {data.traces.length === 0 ? (
+            <p className="muted" style={{ fontSize: "0.78rem" }}>No traces yet.</p>
+          ) : (
+            <div style={{ maxHeight: 320, overflowY: "auto", display: "flex", flexDirection: "column", gap: 8 }}>
+              {data.traces.map((trace) => (
+                <div
+                  key={trace.trace_id}
+                  style={{
+                    border: "1px solid rgba(255,255,255,0.08)",
+                    borderRadius: 10,
+                    padding: 12,
+                    background: "rgba(255,255,255,0.02)",
+                  }}
+                >
+                  <div style={{ display: "flex", justifyContent: "space-between", gap: 8, marginBottom: 6, flexWrap: "wrap" }}>
+                    <span style={{ fontWeight: 700 }}>
+                      {trace.reasoning_path || "unknown"} / {trace.channel || trace.platform || "unknown"}
+                    </span>
+                    <span className="muted" style={{ fontSize: "0.74rem" }}>{formatTimestamp(trace.timestamp)}</span>
+                  </div>
+                  <div style={{ display: "flex", gap: 12, flexWrap: "wrap", marginBottom: 8, fontSize: "0.74rem" }}>
+                    <span>Confidence: {formatPct(trace.confidence)}</span>
+                    <span>Latency: {formatMs(trace.duration_ms)}</span>
+                    <span>Tokens: {formatNumber(trace.tokens_used)}</span>
+                    <span>Cost: {formatUsd(trace.cost_usd)}</span>
+                    <span>Memory hits: {formatNumber(trace.memory_hits)}</span>
+                    <span>Tools: {formatNumber(trace.total_tool_calls)}</span>
+                  </div>
+                  <p style={{ margin: "0 0 6px", fontSize: "0.8rem" }}>
+                    <strong>Input:</strong> {summarize(trace.input_preview)}
+                  </p>
+                  <p style={{ margin: "0 0 6px", fontSize: "0.8rem" }}>
+                    <strong>Output:</strong> {summarize(trace.output_preview)}
+                  </p>
+                  {trace.error ? (
+                    <p style={{ margin: "0 0 6px", fontSize: "0.8rem", color: "var(--danger, #f85149)" }}>
+                      <strong>Error:</strong> {trace.error}
+                    </p>
+                  ) : null}
+                  {trace.tool_calls.length > 0 ? (
+                    <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                      {trace.tool_calls.map((tool, index) => (
+                        <div
+                          key={`${trace.trace_id}-${tool.tool}-${index}`}
+                          style={{
+                            borderLeft: `3px solid ${tool.success ? "var(--ok, #3fb950)" : "var(--danger, #f85149)"}`,
+                            paddingLeft: 8,
+                            fontSize: "0.76rem",
+                          }}
+                        >
+                          <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+                            <span style={{ fontWeight: 700 }}>{tool.tool}</span>
+                            <span className="muted">{formatMs(tool.duration_ms)}</span>
+                            <span className="muted">{tool.success ? "ok" : "failed"}</span>
+                          </div>
+                          <div><strong>Args:</strong> {summarize(tool.args_preview)}</div>
+                          <div><strong>Result:</strong> {summarize(tool.result_preview)}</div>
+                        </div>
+                      ))}
+                    </div>
+                  ) : null}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
+        <div>
+          <p className="panel-label" style={{ margin: "0 0 8px", fontSize: "0.75rem" }}>
+            Audit
+          </p>
+          {data.audit.length === 0 ? (
+            <p className="muted" style={{ fontSize: "0.78rem" }}>No audit records yet.</p>
+          ) : (
+            <div style={{ maxHeight: 240, overflowY: "auto", display: "flex", flexDirection: "column", gap: 8 }}>
+              {data.audit.map((record, index) => (
+                <div
+                  key={`${record.request_id}-${record.action}-${index}`}
+                  style={{
+                    border: "1px solid rgba(255,255,255,0.08)",
+                    borderRadius: 10,
+                    padding: 12,
+                    background: "rgba(255,255,255,0.02)",
+                  }}
+                >
+                  <div style={{ display: "flex", justifyContent: "space-between", gap: 8, flexWrap: "wrap", marginBottom: 6 }}>
+                    <span style={{ fontWeight: 700 }}>
+                      {record.action} / {record.skill_name || "core"}
+                    </span>
+                    <span className="muted" style={{ fontSize: "0.74rem" }}>{formatTimestamp(record.timestamp)}</span>
+                  </div>
+                  <div style={{ display: "flex", gap: 12, flexWrap: "wrap", marginBottom: 8, fontSize: "0.74rem" }}>
+                    <span style={{ color: record.allowed ? "var(--ok, #3fb950)" : "var(--danger, #f85149)" }}>
+                      {record.allowed ? "allowed" : "denied"}
+                    </span>
+                    <span style={{ color: record.success ? "var(--ok, #3fb950)" : "var(--danger, #f85149)" }}>
+                      {record.success ? "success" : "failed"}
+                    </span>
+                    <span>{formatMs(record.execution_time_ms)}</span>
+                    <span>{record.platform || "unknown"}</span>
+                  </div>
+                  <div style={{ fontSize: "0.78rem" }}><strong>Args:</strong> {summarize(record.args_preview)}</div>
+                  <div style={{ fontSize: "0.78rem" }}><strong>Result:</strong> {summarize(record.result_preview)}</div>
+                  {record.denied_reason ? (
+                    <div style={{ fontSize: "0.78rem", color: "var(--danger, #f85149)" }}>
+                      <strong>Denied:</strong> {record.denied_reason}
+                    </div>
+                  ) : null}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
     </div>
   );
 }
@@ -760,7 +1056,7 @@ export default function DashboardPage() {
     });
   }
 
-  async function loadMonitor(agentId: string) {
+async function loadMonitor(agentId: string) {
     const user = getStoredUser();
     if (!user) return;
     setMonitorLoading((s) => new Set(s).add(agentId));
@@ -768,7 +1064,15 @@ export default function DashboardPage() {
       const res = await fetch(`/api/agents/${agentId}/monitor?email=${encodeURIComponent(user.email)}`);
       if (res.ok) {
         const data = await res.json();
-        setMonitorData((prev) => ({ ...prev, [agentId]: { stats: data.stats ?? {}, traces: data.traces ?? [] } }));
+        setMonitorData((prev) => ({
+          ...prev,
+          [agentId]: {
+            stats: data.stats ?? {},
+            traces: data.traces ?? [],
+            audit: data.audit ?? [],
+            auditStats: data.auditStats ?? {},
+          },
+        }));
       }
     } finally {
       setMonitorLoading((s) => { const n = new Set(s); n.delete(agentId); return n; });
@@ -1301,7 +1605,7 @@ export default function DashboardPage() {
           const channelTokenDrafts = channelTokens[agent.id] ?? ({} as Record<ChannelKey, string>);
           const waState = whatsAppState[agent.id];
           const waLoading = whatsAppLoading.has(agent.id);
-          const agentMonitor = monitorData[agent.id] ?? { stats: {}, traces: [] };
+          const agentMonitor = monitorData[agent.id] ?? { stats: {}, traces: [], audit: [], auditStats: {} };
           const isEnvLoading = envLoading.has(agent.id);
           const isKbLoading = kbLoading.has(agent.id);
           const isPeopleLoading = peopleLoading.has(agent.id);
@@ -1930,7 +2234,7 @@ export default function DashboardPage() {
               )}
               {/* ── Monitor Panel ── */}
               {isMonitorOpen && (
-                <MonitorPanel
+                <TracingMonitorPanel
                   agentId={agent.id}
                   data={agentMonitor}
                   loading={isMonitorLoading}

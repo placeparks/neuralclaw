@@ -35,9 +35,12 @@ export async function GET(
     }
 
     const domain = agent.railway_domain;
-    const [statsRes, tracesRes] = await Promise.allSettled([
-      fetch(`${domain}/api/stats`, { signal: AbortSignal.timeout(5000) }),
-      fetch(`${domain}/api/traces?limit=20`, { signal: AbortSignal.timeout(5000) }),
+    const secret = process.env.PROVISIONER_SECRET?.trim();
+    const headers = secret ? { "x-provisioner-secret": secret } : undefined;
+    const [statsRes, tracesRes, auditRes] = await Promise.allSettled([
+      fetch(`${domain}/api/stats`, { signal: AbortSignal.timeout(5000), headers }),
+      fetch(`${domain}/api/traces?limit=20`, { signal: AbortSignal.timeout(5000), headers }),
+      fetch(`${domain}/api/audit?limit=20`, { signal: AbortSignal.timeout(5000), headers }),
     ]);
 
     const stats =
@@ -48,8 +51,12 @@ export async function GET(
       tracesRes.status === "fulfilled" && tracesRes.value.ok
         ? await tracesRes.value.json()
         : [];
+    const audit =
+      auditRes.status === "fulfilled" && auditRes.value.ok
+        ? await auditRes.value.json()
+        : { records: [], stats: {} };
 
-    return NextResponse.json({ stats, traces });
+    return NextResponse.json({ stats, traces, audit: audit.records ?? [], auditStats: audit.stats ?? {} });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Unexpected error";
     return NextResponse.json({ error: message }, { status: 500 });

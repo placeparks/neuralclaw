@@ -371,6 +371,7 @@ async function processOne(deployment: DeploymentRow) {
   const runtimeProvider = normalizeRuntimeProvider(deployment.provider);
 
   const vars: Record<string, string> = {
+    NEURALCLAW_AGENT_ID: deployment.id,
     NEURALCLAW_PROVIDER: runtimeProvider,
     NEURALCLAW_MODEL: deployment.model,
     NEURALCLAW_PLAN: deployment.plan,
@@ -570,21 +571,22 @@ export async function syncMeshEnvForUser(userId: string) {
   for (const agent of agents) {
     if (!agent.railway_service_id) continue;
     try {
-      const meshVars = await buildMeshEnvForAgent(userId, agent.id);
+      const { vars } = await buildRuntimeVarsForAgent(agent.id);
       const deploy = await updateRailwayService({
         serviceId: agent.railway_service_id,
-        variables: meshVars
+        variables: vars
       });
 
       await supabase.from("agent_events").insert({
         agent_id: agent.id,
         event_type: "mesh_env_synced",
         level: "info",
-        message: "Mesh environment synced and redeploy triggered",
+        message: "Runtime environment synced and redeploy triggered",
         metadata: {
           deployment_id: deploy.deploymentId,
-          mesh_enabled: meshVars.NEURALCLAW_MESH_ENABLED,
-          mesh_peers_present: Boolean(meshVars.NEURALCLAW_MESH_PEERS_JSON)
+          mesh_enabled: vars.NEURALCLAW_MESH_ENABLED,
+          mesh_peers_present: Boolean(vars.NEURALCLAW_MESH_PEERS_JSON),
+          agent_id_present: Boolean(vars.NEURALCLAW_AGENT_ID),
         }
       });
 
