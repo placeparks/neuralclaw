@@ -1,8 +1,10 @@
 import { NextResponse } from "next/server";
 import { getSupabaseAdmin } from "@/lib/supabase-admin";
+import { serializeCronJob } from "@/lib/cron-jobs";
 
 // GET /api/agents/[id]/monitor?email=...
-// Proxies /api/stats, /api/traces, and /api/audit from the agent's Railway domain.
+// Proxies /api/stats, /api/traces, and /api/audit from the agent's Railway domain,
+// then joins recent schedule state from Supabase for a unified dashboard view.
 export async function GET(
   req: Request,
   { params }: { params: { id: string } }
@@ -30,8 +32,22 @@ export async function GET(
 
     if (!agent) return NextResponse.json({ error: "Agent not found" }, { status: 404 });
 
+    const { data: jobs, error: jobsError } = await supabase
+      .from("agent_cron_jobs")
+      .select("*")
+      .eq("agent_id", params.id)
+      .eq("user_id", user.id)
+      .order("updated_at", { ascending: false })
+      .limit(12);
+
+    if (jobsError) {
+      return NextResponse.json({ error: jobsError.message }, { status: 500 });
+    }
+
+    const serializedJobs = (jobs ?? []).map((row) => serializeCronJob(row as Record<string, unknown>));
+
     if (!agent.railway_domain) {
-      return NextResponse.json({ stats: {}, traces: [], audit: [], auditStats: {} });
+      return NextResponse.json({ stats: {}, traces: [], audit: [], auditStats: {}, jobs: serializedJobs });
     }
 
     const domain = agent.railway_domain;
@@ -61,6 +77,7 @@ export async function GET(
       traces,
       audit: audit.records ?? [],
       auditStats: audit.stats ?? {},
+      jobs: serializedJobs,
     });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Unexpected error";

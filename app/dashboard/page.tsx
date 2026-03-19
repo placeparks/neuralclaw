@@ -163,6 +163,7 @@ type MonitorData = {
   traces: TracelineEntry[];
   audit: AuditEntry[];
   auditStats: Record<string, unknown>;
+  jobs: AgentCronJob[];
 };
 
 type CronDraft = {
@@ -420,14 +421,83 @@ function TracingMonitorPanel({
     const num = toNumber(value);
     return num === null ? "-" : `${Math.round(num)} ms`;
   };
-  const formatTimestamp = (value: number): string => {
-    const ms = value > 1_000_000_000_000 ? value : value * 1000;
-    return new Date(ms).toLocaleString();
+  const parseDateValue = (value: unknown): number | null => {
+    if (typeof value === "number" && Number.isFinite(value)) {
+      return value > 1_000_000_000_000 ? value : value * 1000;
+    }
+    if (typeof value === "string" && value.trim()) {
+      const parsed = new Date(value).getTime();
+      return Number.isNaN(parsed) ? null : parsed;
+    }
+    return null;
+  };
+  const formatTimestamp = (value: unknown): string => {
+    const parsed = parseDateValue(value);
+    return parsed === null ? "-" : new Date(parsed).toLocaleString();
   };
   const summarize = (value: string | null | undefined, empty = "No data"): string => {
-    const text = (value ?? "").trim();
-    return text ? text : empty;
+    const textValue = (value ?? "").trim();
+    return textValue ? textValue : empty;
   };
+  const scheduleLabel = (job: AgentCronJob): string =>
+    job.run_once_at ? `One-time / ${formatTimestamp(job.run_once_at)}` : `${job.cron_expression ?? "-"} / ${job.timezone}`;
+
+  type TimelineItem = {
+    kind: "trace" | "audit" | "schedule";
+    time: number;
+    title: string;
+    detail: string;
+    status?: string;
+    accent: string;
+  };
+
+  const timelineItems: TimelineItem[] = [
+    ...data.traces
+      .map((trace) => {
+        const time = parseDateValue(trace.timestamp);
+        if (time === null) return null;
+        return {
+          kind: "trace" as const,
+          time,
+          title: `${trace.reasoning_path || "unknown"} / ${trace.channel || trace.platform || "unknown"}`,
+          detail: trace.error ? `Error: ${trace.error}` : summarize(trace.output_preview),
+          status: trace.error ? "error" : `${trace.total_tool_calls} tool calls`,
+          accent: trace.error ? "var(--danger, #f85149)" : "var(--accent, #58a6ff)",
+        };
+      })
+      .filter(Boolean) as TimelineItem[],
+    ...data.audit
+      .map((record) => {
+        const time = parseDateValue(record.timestamp);
+        if (time === null) return null;
+        return {
+          kind: "audit" as const,
+          time,
+          title: `${record.action || record.action_type || "audit"} / ${record.skill_name || record.tool_name || "core"}`,
+          detail: record.denied_reason || summarize(record.result_preview, summarize(record.args_preview)),
+          status: String(record.status ?? record.outcome ?? (record.allowed ? "allowed" : "logged")),
+          accent: record.allowed === false || record.success === false ? "var(--danger, #f85149)" : "var(--amber, #d29922)",
+        };
+      })
+      .filter(Boolean) as TimelineItem[],
+    ...data.jobs
+      .map((job) => {
+        const time = parseDateValue(job.last_finished_at || job.last_started_at || job.last_scheduled_for || job.updated_at || job.created_at);
+        if (time === null) return null;
+        const status = job.last_status || (job.enabled ? "scheduled" : "disabled");
+        return {
+          kind: "schedule" as const,
+          time,
+          title: job.name,
+          detail: job.last_error || job.last_result_preview || scheduleLabel(job),
+          status,
+          accent: status === "failed" ? "var(--danger, #f85149)" : status === "completed" ? "var(--ok, #3fb950)" : "#bc8cff",
+        };
+      })
+      .filter(Boolean) as TimelineItem[],
+  ]
+    .sort((a, b) => b.time - a.time)
+    .slice(0, 18);
 
   const successRate = toNumber(s.success_rate);
   const denialRate = toNumber(auditStats.audit_denial_rate);
@@ -454,6 +524,7 @@ function TracingMonitorPanel({
     { label: "Companion", value: s.companion_enabled ? "Enabled" : "Off" },
     { label: "Scheduler", value: s.cron_enabled ? "Enabled" : "Off" },
     { label: "Traceline", value: s.traceline_enabled ? "Enabled" : "Off" },
+    { label: "Schedules", value: String(data.jobs.length) },
     { label: "Audit Records", value: formatNumber(auditStats.audit_total_records) },
     {
       label: "Audit Denial Rate",
@@ -501,6 +572,39 @@ function TracingMonitorPanel({
       </div>
 
       <div style={{ display: "grid", gridTemplateColumns: "1fr", gap: 14 }}>
+        <div>
+          <p className="panel-label" style={{ margin: "0 0 8px", fontSize: "0.75rem" }}>
+            Activity Timeline
+          </p>
+          {timelineItems.length === 0 ? (
+            <p className="muted" style={{ fontSize: "0.78rem" }}>No activity yet.</p>
+          ) : (
+            <div style={{ maxHeight: 260, overflowY: "auto", display: "flex", flexDirection: "column", gap: 8 }}>
+              {timelineItems.map((item, index) => (
+                <div
+                  key={`${item.kind}-${item.time}-${index}`}
+                  style={{
+                    borderLeft: `3px solid ${item.accent}`,
+                    padding: "8px 10px",
+                    background: "rgba(255,255,255,0.02)",
+                    borderRadius: "0 8px 8px 0",
+                  }}
+                >
+                  <div style={{ display: "flex", justifyContent: "space-between", gap: 8, flexWrap: "wrap" }}>
+                    <strong>{item.title}</strong>
+                    <span className="muted" style={{ fontSize: "0.74rem" }}>{new Date(item.time).toLocaleString()}</span>
+                  </div>
+                  <div style={{ display: "flex", gap: 10, flexWrap: "wrap", margin: "4px 0", fontSize: "0.74rem" }}>
+                    <span style={{ color: item.accent, fontWeight: 700 }}>{item.kind}</span>
+                    {item.status ? <span className="muted">{item.status}</span> : null}
+                  </div>
+                  <div style={{ fontSize: "0.78rem" }}>{item.detail}</div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
         <div>
           <p className="panel-label" style={{ margin: "0 0 8px", fontSize: "0.75rem" }}>
             Traceline
@@ -574,6 +678,46 @@ function TracingMonitorPanel({
 
         <div>
           <p className="panel-label" style={{ margin: "0 0 8px", fontSize: "0.75rem" }}>
+            Scheduler
+          </p>
+          {data.jobs.length === 0 ? (
+            <p className="muted" style={{ fontSize: "0.78rem" }}>No schedules yet.</p>
+          ) : (
+            <div style={{ maxHeight: 260, overflowY: "auto", display: "flex", flexDirection: "column", gap: 8 }}>
+              {data.jobs.map((job) => (
+                <div
+                  key={job.id}
+                  style={{
+                    border: "1px solid rgba(255,255,255,0.08)",
+                    borderRadius: 10,
+                    padding: 12,
+                    background: "rgba(255,255,255,0.02)",
+                  }}
+                >
+                  <div style={{ display: "flex", justifyContent: "space-between", gap: 8, flexWrap: "wrap", marginBottom: 6 }}>
+                    <span style={{ fontWeight: 700 }}>{job.name}</span>
+                    <span className={`pill ${job.last_status === "completed" ? "active" : job.last_status === "failed" ? "failed" : job.enabled ? "pending" : "paused"}`}>
+                      {job.last_status || (job.enabled ? "scheduled" : "disabled")}
+                    </span>
+                  </div>
+                  <div className="muted" style={{ fontSize: "0.76rem", marginBottom: 6 }}>
+                    {scheduleLabel(job)}
+                  </div>
+                  <div style={{ display: "flex", gap: 12, flexWrap: "wrap", marginBottom: 6, fontSize: "0.74rem" }}>
+                    <span>Last scheduled: {job.last_scheduled_for ? ago(job.last_scheduled_for) : "-"}</span>
+                    <span>Started: {job.last_started_at ? ago(job.last_started_at) : "-"}</span>
+                    <span>Finished: {job.last_finished_at ? ago(job.last_finished_at) : "-"}</span>
+                  </div>
+                  {job.last_result_preview ? <div style={{ fontSize: "0.78rem" }}><strong>Result:</strong> {job.last_result_preview}</div> : null}
+                  {job.last_error ? <div style={{ fontSize: "0.78rem", color: "var(--danger, #f85149)" }}><strong>Error:</strong> {job.last_error}</div> : null}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
+        <div>
+          <p className="panel-label" style={{ margin: "0 0 8px", fontSize: "0.75rem" }}>
             Audit
           </p>
           {data.audit.length === 0 ? (
@@ -592,9 +736,9 @@ function TracingMonitorPanel({
                 >
                   <div style={{ display: "flex", justifyContent: "space-between", gap: 8, flexWrap: "wrap", marginBottom: 6 }}>
                     <span style={{ fontWeight: 700 }}>
-                      {record.action} / {record.skill_name || "core"}
+                      {record.action || record.action_type || "audit"} / {record.skill_name || record.tool_name || "core"}
                     </span>
-                    <span className="muted" style={{ fontSize: "0.74rem" }}>{typeof record.timestamp === "number" ? formatTimestamp(record.timestamp) : String(record.timestamp ?? "")}</span>
+                    <span className="muted" style={{ fontSize: "0.74rem" }}>{formatTimestamp(record.timestamp)}</span>
                   </div>
                   <div style={{ display: "flex", gap: 12, flexWrap: "wrap", marginBottom: 8, fontSize: "0.74rem" }}>
                     <span style={{ color: record.allowed ? "var(--ok, #3fb950)" : "var(--danger, #f85149)" }}>
@@ -678,7 +822,13 @@ function CronJobsPanel({
           className="auth-input"
           placeholder="Cron expression (e.g. 0 9 * * *)"
           value={draft.cronExpression}
-          onChange={(e) => onChange({ cronExpression: e.target.value })}
+          onChange={(e) => onChange({ cronExpression: e.target.value, runOnceAt: e.target.value ? "" : draft.runOnceAt })}
+        />
+        <input
+          className="auth-input"
+          type="datetime-local"
+          value={draft.runOnceAt}
+          onChange={(e) => onChange({ runOnceAt: e.target.value, cronExpression: e.target.value ? "" : draft.cronExpression })}
         />
         <input
           className="auth-input"
@@ -694,6 +844,14 @@ function CronJobsPanel({
           />
           Enabled
         </label>
+        <label className="cron-toggle">
+          <input
+            type="checkbox"
+            checked={draft.deleteAfterRun}
+            onChange={(e) => onChange({ deleteAfterRun: e.target.checked })}
+          />
+          Delete after run
+        </label>
         <textarea
           className="auth-input"
           style={{ minHeight: 92, resize: "vertical", fontFamily: "var(--font-mono)" }}
@@ -708,7 +866,7 @@ function CronJobsPanel({
           {draft.jobId ? "Update Schedule" : "+ Save Schedule"}
         </button>
         <span className="muted" style={{ fontSize: "0.74rem" }}>
-          Examples: <code>0 9 * * *</code>, <code>*/30 * * * *</code>, <code>15 8 * * 1-5</code>
+          Use either a cron expression or a one-time datetime. Examples: <code>0 9 * * *</code>, <code>*/30 * * * *</code>, <code>15 8 * * 1-5</code>
         </span>
       </div>
 
@@ -728,13 +886,14 @@ function CronJobsPanel({
                 <div>
                   <strong>{job.name}</strong>
                   <div className="cron-meta">
-                    <span>{job.cron_expression}</span>
+                    <span>{job.run_once_at ? `One-time / ${new Date(job.run_once_at).toLocaleString()}` : job.cron_expression}</span>
                     <span>{job.timezone}</span>
+                    {job.delivery_channel ? <span>Deliver to {job.delivery_channel}</span> : null}
                     <span className={`pill ${job.enabled ? "active" : "pending"}`}>
                       {job.enabled ? "Enabled" : "Disabled"}
                     </span>
                     <span className={`pill ${job.last_status === "completed" ? "active" : job.last_status === "failed" ? "failed" : "pending"}`}>
-                      {job.last_status}
+                      {job.last_status || (job.enabled ? "scheduled" : "disabled")}
                     </span>
                   </div>
                 </div>
@@ -1399,6 +1558,7 @@ async function loadMonitor(agentId: string) {
             traces: data.traces ?? [],
             audit: data.audit ?? [],
             auditStats: data.auditStats ?? {},
+            jobs: data.jobs ?? [],
           },
         }));
       }
@@ -1935,7 +2095,7 @@ async function loadMonitor(agentId: string) {
           const waState = whatsAppState[agent.id];
           const waLoading = whatsAppLoading.has(agent.id);
           const agentCronJobs = cronJobs[agent.id] ?? [];
-          const agentMonitor = monitorData[agent.id] ?? { stats: {}, traces: [], audit: [], auditStats: {} };
+          const agentMonitor = monitorData[agent.id] ?? { stats: {}, traces: [], audit: [], auditStats: {}, jobs: [] };
           const isEnvLoading = envLoading.has(agent.id);
           const isKbLoading = kbLoading.has(agent.id);
           const isPeopleLoading = peopleLoading.has(agent.id);
