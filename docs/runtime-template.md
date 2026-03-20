@@ -6,7 +6,7 @@ Repo: [`neural-runtime-template`](https://github.com/placeparks/neural-runtime-t
 
 ## Files
 
-- `Dockerfile` - Python 3.12-slim image pinned to `neuralclaw==1.0.1`, copies `start.sh` and `mesh_gateway.py`
+- `Dockerfile` - Python 3.12-slim image pinned to `neuralclaw==1.1.6`, copies `start.sh` and `mesh_gateway.py`
 - `start.sh` - Generates `config.toml`, writes knowledge and mesh files, and starts the gateway
 - `mesh_gateway.py` - `MeshAwareGateway` with HTTP mesh server, channel/runtime glue, and knowledge setup
 
@@ -81,7 +81,7 @@ When set, `start.sh` writes it to `~/.neuralclaw/knowledge.txt`. On startup, `me
 
 ## Startup Sequence
 
-1. The image boots with `neuralclaw==1.0.1`.
+1. The image boots with `neuralclaw==1.1.6`.
 2. `start.sh` writes `~/.neuralclaw/mesh-peers.json` if `NEURALCLAW_MESH_PEERS_JSON` is set.
 3. `start.sh` writes `~/.neuralclaw/knowledge.txt` if `NEURALCLAW_KNOWLEDGE_CONTENT` is set.
 4. `start.sh` imports `CHATGPT_TOKEN` and `CLAUDE_SESSION_KEY` into NeuralClaw's token store when provided.
@@ -107,7 +107,7 @@ The mesh HTTP server runs on `$PORT` and exposes:
 
 ## Built-in Runtime Notes
 
-- The runtime template matches the published `neuralclaw==1.0.1` package instead of the older `0.8.0` pin.
+- The runtime template matches the published `neuralclaw==1.1.6` package instead of the older `0.8.0` pin.
 - `g4f` is no longer a supported runtime provider in this template.
 - The installed extras cover the runtime features used here, including voice, vector memory, Google Workspace, and Microsoft 365 support.
 - `file_ops` roots stay empty by default unless a knowledge base file is present, in which case `~/.neuralclaw/` is added automatically.

@@ -11,7 +11,7 @@ Railway GraphQL API  →  per-user agent service (neural-runtime-template)
 ```
 
 Each deployed agent runs `mesh_gateway.py` on Railway, which:
-- Uses the `neural-runtime-template` image pinned to `neuralclaw==1.0.1`
+- Uses the `neural-runtime-template` image pinned to `neuralclaw==1.1.6`
 - Generates `~/.neuralclaw/config.toml` from env vars
 - Starts `MeshAwareGateway` with the channels enabled for that agent
 - Exposes `/health` and `/a2a/message` HTTP endpoints
