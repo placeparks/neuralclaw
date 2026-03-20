@@ -39,11 +39,17 @@ export async function POST(req: Request) {
     }
 
     const tokenProviders = ["chatgpt_token", "claude_token", "chatgpt_session", "claude_session"];
+    if (body.provider === "g4f") {
+      return NextResponse.json(
+        { error: "g4f is no longer supported by the published NeuralClaw package. Use OpenRouter, Local, or a token-backed provider instead." },
+        { status: 400 }
+      );
+    }
     if (body.provider === "claude_token" && providerApiKey) {
       providerApiKey = extractClaudeSessionCredential(providerApiKey);
     }
 
-    if (body.provider !== "local" && body.provider !== "g4f" && !tokenProviders.includes(body.provider) && !providerApiKey) {
+    if (body.provider !== "local" && !tokenProviders.includes(body.provider) && !providerApiKey) {
       return NextResponse.json({ error: "Provider API key is required for hosted models." }, { status: 400 });
     }
     if (tokenProviders.includes(body.provider) && !providerApiKey) {

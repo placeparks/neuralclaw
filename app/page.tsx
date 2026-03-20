@@ -306,7 +306,7 @@ export default function LandingPage() {
         <div className="land-feature-row">
           {[
             { label: "6 Channels", desc: "Telegram, Discord, Slack, WhatsApp, Signal, Web Chat — all adapters built-in" },
-            { label: "7 Providers", desc: "OpenAI, Anthropic, OpenRouter, Local Ollama, g4f, ChatGPT Session, Claude Session — no API key required for session providers" },
+            { label: "7 Providers", desc: "OpenAI, Anthropic, OpenRouter, Venice, Local Ollama, ChatGPT Token, Claude Token — token-backed providers skip standard API keys" },
             { label: "Railway Deploy", desc: "One-click cloud provisioning, env injection, live status tracking" },
             { label: "Desktop Companion", desc: "Let hosted agents open a real local browser, launch apps, and execute device-bound tasks on a paired Windows machine" },
             { label: "Zero-Trust", desc: "Pre-LLM threat screening, policy engine, full audit trail, secrets redacted" },

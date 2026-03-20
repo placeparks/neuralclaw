@@ -11,9 +11,9 @@ Railway GraphQL API  →  per-user agent service (neural-runtime-template)
 ```
 
 Each deployed agent runs `mesh_gateway.py` on Railway, which:
-- Installs `neuralclaw[all-channels]` from PyPI at boot
+- Uses the `neural-runtime-template` image pinned to `neuralclaw==1.0.1`
 - Generates `~/.neuralclaw/config.toml` from env vars
-- Starts `MeshAwareGateway` with Telegram, Discord, and Web channels
+- Starts `MeshAwareGateway` with the channels enabled for that agent
 - Exposes `/health` and `/a2a/message` HTTP endpoints
 
 ## Quick Start
@@ -138,6 +138,5 @@ The runtime template repo is [`neural-runtime-template`](https://github.com/plac
 
 | Fix | File | Description |
 |---|---|---|
-| OpenAI `arguments` type | `mesh_gateway.py` | `ToolCall.to_dict()` monkey-patched to serialize arguments as JSON string (required for multi-turn tool use) |
 | Telegram 409 Conflict | `mesh_gateway.py` | 8s startup delay (`NEURALCLAW_STARTUP_DELAY`) prevents Railway rolling-deploy race condition |
 | Knowledge base file_ops | `mesh_gateway.py` | `set_allowed_roots` configured so agent can read `~/.neuralclaw/knowledge.txt` |

@@ -7,7 +7,7 @@ import type { ChannelKey, DeploymentRequest, FeatureFlags, ProviderKey, VoicePro
 
 type ChannelConfig = { key: ChannelKey; label: string; placeholder: string };
 type SkillConfig = { key: "web" | "files" | "code" | "calendar"; label: string; tools: string[] };
-type OnboardProviderKey = Exclude<ProviderKey, "chatgpt_token" | "claude_token" | "chatgpt_session" | "claude_session">;
+type OnboardProviderKey = Exclude<ProviderKey, "g4f" | "chatgpt_session" | "claude_session">;
 
 const PERSONAS: Array<{ key: string; label: string; preview: string }> = [
   {
@@ -99,12 +99,13 @@ const CHANNELS: ChannelConfig[] = [
 ];
 
 const PROVIDER_MODELS: Record<OnboardProviderKey, string[]> = {
-  openai: ["gpt-4o", "gpt-4.1", "gpt-4o-mini", "o3", "o4-mini"],
-  anthropic: ["claude-sonnet-4-20250514", "claude-opus-4-20250514", "claude-haiku-4-5-20251001", "claude-3-5-sonnet-latest"],
-  openrouter: ["anthropic/claude-sonnet-4-20250514", "openai/gpt-4o", "google/gemini-2.0-flash", "meta-llama/llama-4-scout"],
+  openai: ["gpt-5.4", "gpt-5", "gpt-4.1", "o4-mini"],
+  anthropic: ["claude-sonnet-4-6", "claude-opus-4-1", "claude-3-5-haiku-latest"],
+  openrouter: ["anthropic/claude-sonnet-4-6", "openai/gpt-5", "google/gemini-2.5-flash", "meta-llama/llama-4-maverick"],
   venice: ["venice-uncensored", "llama-3.3-70b", "qwen3-next-80b", "openai-gpt-oss-120b"],
-  local: ["qwen3.5:2b", "gemma3", "mistral", "llama3"],
-  g4f: ["gpt-4o", "gpt-4o-mini", "claude-3.5-sonnet"],
+  local: ["qwen3:8b", "gemma3", "mistral", "llama3"],
+  chatgpt_token: ["auto"],
+  claude_token: ["auto"],
 };
 
 const SKILLS: SkillConfig[] = [
@@ -181,8 +182,8 @@ function OnboardPageInner() {
     if (!agentName.trim()) return setError("Agent name is required.");
     const resolvedProviderCredential = providerApiKey.trim();
 
-    if (provider !== "local" && provider !== "g4f" && !resolvedProviderCredential) {
-      return setError("Provider API key required.");
+    if (provider !== "local" && !resolvedProviderCredential) {
+      return setError("Provider credential required.");
     }
     if (activeChannels.length === 0) return setError("Enable at least one channel.");
     const missing = activeChannels.find((c) => !tokens[c.key].trim());
@@ -274,19 +275,34 @@ function OnboardPageInner() {
             <option value="anthropic">Anthropic (API key)</option>
             <option value="openrouter">OpenRouter (API key)</option>
             <option value="venice">Venice API</option>
-            <option value="g4f">Free Wrapper (g4f)</option>
             <option value="local">Local (Ollama)</option>
+            <option value="chatgpt_token">ChatGPT Token</option>
+            <option value="claude_token">Claude Session Key</option>
           </select>
 
-          {provider !== "local" && provider !== "g4f" && (
+          {provider !== "local" && (
             <>
-              <label className="label">API key</label>
-              <input className="input" type="password" value={providerApiKey} onChange={(e) => setProviderApiKey(e.target.value)} />
+              <label className="label">
+                {provider === "chatgpt_token" || provider === "claude_token" ? "Credential" : "API key"}
+              </label>
+              <input
+                className="input"
+                type="password"
+                placeholder={
+                  provider === "chatgpt_token"
+                    ? "ChatGPT session cookie or exported credential"
+                    : provider === "claude_token"
+                      ? "Claude sessionKey"
+                      : ""
+                }
+                value={providerApiKey}
+                onChange={(e) => setProviderApiKey(e.target.value)}
+              />
             </>
           )}
-          {provider === "g4f" && (
+          {(provider === "chatgpt_token" || provider === "claude_token") && (
             <p className="muted" style={{ fontSize: "0.78rem", margin: "8px 0 0" }}>
-              g4f mode does not require a provider API key.
+              Use the credential produced by `neuralclaw session auth chatgpt` or `neuralclaw session auth claude`.
             </p>
           )}
           <label className="label">Model</label>
