@@ -4,7 +4,6 @@ import {
   normalizeStringArray,
   normalizeStringMap,
 } from "@/lib/people-memory";
-import { syncMeshEnvForUser } from "@/lib/provisioner";
 
 type IngestBody = {
   platform?: string;
@@ -246,17 +245,9 @@ export async function POST(
       saved = data;
     }
 
-    let syncWarning: string | null = null;
-    try {
-      await syncMeshEnvForUser(agentRow.user_id);
-    } catch (err) {
-      syncWarning = err instanceof Error ? err.message : String(err);
-    }
-
     return NextResponse.json({
       ok: true,
       person: serializePerson(saved as Record<string, unknown>),
-      warning: syncWarning,
     });
   } catch (err) {
     return NextResponse.json(

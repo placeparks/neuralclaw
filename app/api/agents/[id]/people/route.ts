@@ -4,7 +4,6 @@ import {
   normalizeStringArray,
   normalizeStringMap,
 } from "@/lib/people-memory";
-import { syncMeshEnvForUser } from "@/lib/provisioner";
 
 async function resolveUser(email: string) {
   const supabase = getSupabaseAdmin();
@@ -184,16 +183,8 @@ export async function POST(
       person = data;
     }
 
-    let syncWarning: string | null = null;
-    try {
-      await syncMeshEnvForUser(user.id);
-    } catch (e) {
-      syncWarning = e instanceof Error ? e.message : String(e);
-    }
-
     return NextResponse.json({
       person: serializePerson(person as Record<string, unknown>),
-      warning: syncWarning,
     });
   } catch (err) {
     return NextResponse.json(
@@ -229,14 +220,7 @@ export async function DELETE(
       .eq("agent_id", params.id)
       .eq("user_id", user.id);
 
-    let syncWarning: string | null = null;
-    try {
-      await syncMeshEnvForUser(user.id);
-    } catch (e) {
-      syncWarning = e instanceof Error ? e.message : String(e);
-    }
-
-    return NextResponse.json({ ok: true, warning: syncWarning });
+    return NextResponse.json({ ok: true });
   } catch (err) {
     return NextResponse.json(
       { error: err instanceof Error ? err.message : "Unexpected error" },
