@@ -1,10 +1,22 @@
 import { NextResponse } from "next/server";
 import { getSupabaseAdmin } from "@/lib/supabase-admin";
-import { isValidCronExpression, isValidTimezone, normalizeCronExpression, serializeCronJob } from "@/lib/cron-jobs";
+import {
+  buildOneTimeFallbackCron,
+  buildOneTimeFallbackName,
+  isValidCronExpression,
+  isValidTimezone,
+  normalizeCronExpression,
+  serializeCronJob,
+} from "@/lib/cron-jobs";
 
 function isMissingDeleteAfterRun(errorMessage: string | null | undefined): boolean {
   const text = String(errorMessage || "").toLowerCase();
   return text.includes("delete_after_run") && (text.includes("schema cache") || text.includes("column"));
+}
+
+function isCronExpressionRequired(errorMessage: string | null | undefined): boolean {
+  const text = String(errorMessage || "").toLowerCase();
+  return text.includes("cron_expression") && text.includes("not-null constraint");
 }
 
 function isAuthorized(req: Request): boolean {
@@ -112,6 +124,25 @@ export async function POST(req: Request, { params }: { params: { id: string } })
           cron_expression: cronExpression,
           timezone,
           run_once_at: runOnceAt,
+          delivery_channel: deliveryChannel,
+          delivery_channel_id: deliveryChannelId,
+          delivery_author_id: deliveryAuthorId,
+          delivery_author_name: deliveryAuthorName,
+          enabled,
+        })
+        .select("*")
+        .single();
+    }
+    if (result.error && runOnceAt && isCronExpressionRequired(result.error.message)) {
+      result = await supabase
+        .from("agent_cron_jobs")
+        .insert({
+          agent_id: params.id,
+          user_id: agent.user_id,
+          name: buildOneTimeFallbackName(name, runOnceAt),
+          prompt,
+          cron_expression: buildOneTimeFallbackCron(runOnceAt, timezone),
+          timezone,
           delivery_channel: deliveryChannel,
           delivery_channel_id: deliveryChannelId,
           delivery_author_id: deliveryAuthorId,

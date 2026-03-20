@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { getSupabaseAdmin } from "@/lib/supabase-admin";
+import { extractOneTimeFallbackRunOnceAt } from "@/lib/cron-jobs";
 
 function isMissingDeleteAfterRun(errorMessage: string | null | undefined): boolean {
   const text = String(errorMessage || "").toLowerCase();
@@ -32,7 +33,7 @@ export async function POST(req: Request, { params }: { params: { id: string; job
     if (loadResult.error && isMissingDeleteAfterRun(loadResult.error.message)) {
       loadResult = await supabase
         .from("agent_cron_jobs")
-        .select("id")
+        .select("id, name")
         .eq("id", params.jobId)
         .eq("agent_id", params.id)
         .single();
@@ -40,6 +41,9 @@ export async function POST(req: Request, { params }: { params: { id: string; job
     if (loadResult.error || !loadResult.data) return NextResponse.json({ error: loadResult.error?.message ?? "Job not found" }, { status: 404 });
     if ("delete_after_run" in (loadResult.data as Record<string, unknown>)) {
       deleteAfterRun = Boolean((loadResult.data as Record<string, unknown>).delete_after_run);
+    }
+    if (!deleteAfterRun) {
+      deleteAfterRun = Boolean(extractOneTimeFallbackRunOnceAt(String((loadResult.data as Record<string, unknown>).name ?? "")));
     }
 
     const payload: Record<string, unknown> = {

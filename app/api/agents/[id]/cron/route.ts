@@ -1,10 +1,22 @@
 import { NextResponse } from "next/server";
 import { getSupabaseAdmin } from "@/lib/supabase-admin";
-import { isValidCronExpression, isValidTimezone, normalizeCronExpression, serializeCronJob } from "@/lib/cron-jobs";
+import {
+  buildOneTimeFallbackCron,
+  buildOneTimeFallbackName,
+  isValidCronExpression,
+  isValidTimezone,
+  normalizeCronExpression,
+  serializeCronJob,
+} from "@/lib/cron-jobs";
 
 function isMissingDeleteAfterRun(errorMessage: string | null | undefined): boolean {
   const text = String(errorMessage || "").toLowerCase();
   return text.includes("delete_after_run") && (text.includes("schema cache") || text.includes("column"));
+}
+
+function isCronExpressionRequired(errorMessage: string | null | undefined): boolean {
+  const text = String(errorMessage || "").toLowerCase();
+  return text.includes("cron_expression") && text.includes("not-null constraint");
 }
 
 async function resolveUserId(email: string) {
@@ -133,6 +145,30 @@ export async function POST(req: Request, { params }: { params: { id: string } })
 
     if (result.error && isMissingDeleteAfterRun(result.error.message)) {
       const { delete_after_run: _ignored, ...fallbackPayload } = payload;
+      result = jobId
+        ? await supabase
+            .from("agent_cron_jobs")
+            .update(fallbackPayload)
+            .eq("id", jobId)
+            .eq("agent_id", params.id)
+            .eq("user_id", userId)
+            .select("*")
+            .single()
+        : await supabase
+            .from("agent_cron_jobs")
+            .insert(fallbackPayload)
+            .select("*")
+            .single();
+    }
+
+    if (result.error && runOnceAt && isCronExpressionRequired(result.error.message)) {
+      const fallbackPayload = {
+        ...payload,
+        name: buildOneTimeFallbackName(name, runOnceAt),
+        cron_expression: buildOneTimeFallbackCron(runOnceAt, timezone),
+      };
+      delete (fallbackPayload as { run_once_at?: string | null }).run_once_at;
+      delete (fallbackPayload as { delete_after_run?: boolean }).delete_after_run;
       result = jobId
         ? await supabase
             .from("agent_cron_jobs")
