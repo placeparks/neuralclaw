@@ -2,6 +2,11 @@ import { NextResponse } from "next/server";
 import { getSupabaseAdmin } from "@/lib/supabase-admin";
 import { isValidCronExpression, isValidTimezone, normalizeCronExpression, serializeCronJob } from "@/lib/cron-jobs";
 
+function isMissingDeleteAfterRun(errorMessage: string | null | undefined): boolean {
+  const text = String(errorMessage || "").toLowerCase();
+  return text.includes("delete_after_run") && (text.includes("schema cache") || text.includes("column"));
+}
+
 function isAuthorized(req: Request): boolean {
   const expected = process.env.PROVISIONER_SECRET?.trim();
   if (!expected) return true;
@@ -76,7 +81,7 @@ export async function POST(req: Request, { params }: { params: { id: string } })
       .single();
     if (!agent) return NextResponse.json({ error: "Agent not found" }, { status: 404 });
 
-    const { data, error } = await supabase
+    let result = await supabase
       .from("agent_cron_jobs")
       .insert({
         agent_id: params.id,
@@ -95,9 +100,30 @@ export async function POST(req: Request, { params }: { params: { id: string } })
       })
       .select("*")
       .single();
-    if (error || !data) return NextResponse.json({ error: error?.message ?? "Unable to create schedule" }, { status: 500 });
 
-    return NextResponse.json({ job: serializeCronJob(data as Record<string, unknown>) });
+    if (result.error && isMissingDeleteAfterRun(result.error.message)) {
+      result = await supabase
+        .from("agent_cron_jobs")
+        .insert({
+          agent_id: params.id,
+          user_id: agent.user_id,
+          name,
+          prompt,
+          cron_expression: cronExpression,
+          timezone,
+          run_once_at: runOnceAt,
+          delivery_channel: deliveryChannel,
+          delivery_channel_id: deliveryChannelId,
+          delivery_author_id: deliveryAuthorId,
+          delivery_author_name: deliveryAuthorName,
+          enabled,
+        })
+        .select("*")
+        .single();
+    }
+    if (result.error || !result.data) return NextResponse.json({ error: result.error?.message ?? "Unable to create schedule" }, { status: 500 });
+
+    return NextResponse.json({ job: serializeCronJob(result.data as Record<string, unknown>) });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Unexpected error";
     return NextResponse.json({ error: message }, { status: 500 });

@@ -2,6 +2,11 @@ import { NextResponse } from "next/server";
 import { getSupabaseAdmin } from "@/lib/supabase-admin";
 import { isValidCronExpression, isValidTimezone, normalizeCronExpression, serializeCronJob } from "@/lib/cron-jobs";
 
+function isMissingDeleteAfterRun(errorMessage: string | null | undefined): boolean {
+  const text = String(errorMessage || "").toLowerCase();
+  return text.includes("delete_after_run") && (text.includes("schema cache") || text.includes("column"));
+}
+
 async function resolveUserId(email: string) {
   const supabase = getSupabaseAdmin();
   const { data: user } = await supabase
@@ -111,7 +116,7 @@ export async function POST(req: Request, { params }: { params: { id: string } })
       updated_at: new Date().toISOString(),
     };
 
-    const result = jobId
+    let result = jobId
       ? await supabase
           .from("agent_cron_jobs")
           .update(payload)
@@ -125,6 +130,24 @@ export async function POST(req: Request, { params }: { params: { id: string } })
           .insert(payload)
           .select("*")
           .single();
+
+    if (result.error && isMissingDeleteAfterRun(result.error.message)) {
+      const { delete_after_run: _ignored, ...fallbackPayload } = payload;
+      result = jobId
+        ? await supabase
+            .from("agent_cron_jobs")
+            .update(fallbackPayload)
+            .eq("id", jobId)
+            .eq("agent_id", params.id)
+            .eq("user_id", userId)
+            .select("*")
+            .single()
+        : await supabase
+            .from("agent_cron_jobs")
+            .insert(fallbackPayload)
+            .select("*")
+            .single();
+    }
 
     if (result.error || !result.data) {
       return NextResponse.json({ error: result.error?.message ?? "Unable to save schedule" }, { status: 500 });

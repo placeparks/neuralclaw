@@ -1,6 +1,11 @@
 import { NextResponse } from "next/server";
 import { getSupabaseAdmin } from "@/lib/supabase-admin";
 
+function isMissingDeleteAfterRun(errorMessage: string | null | undefined): boolean {
+  const text = String(errorMessage || "").toLowerCase();
+  return text.includes("delete_after_run") && (text.includes("schema cache") || text.includes("column"));
+}
+
 function isAuthorized(req: Request): boolean {
   const expected = process.env.PROVISIONER_SECRET?.trim();
   if (!expected) return true;
@@ -17,13 +22,25 @@ export async function POST(req: Request, { params }: { params: { id: string; job
     const errorText = String(body.error ?? "").trim() || null;
 
     const supabase = getSupabaseAdmin();
-    const { data: existing, error: loadError } = await supabase
+    let loadResult = await supabase
       .from("agent_cron_jobs")
       .select("delete_after_run")
       .eq("id", params.jobId)
       .eq("agent_id", params.id)
       .single();
-    if (loadError || !existing) return NextResponse.json({ error: loadError?.message ?? "Job not found" }, { status: 404 });
+    let deleteAfterRun = false;
+    if (loadResult.error && isMissingDeleteAfterRun(loadResult.error.message)) {
+      loadResult = await supabase
+        .from("agent_cron_jobs")
+        .select("id")
+        .eq("id", params.jobId)
+        .eq("agent_id", params.id)
+        .single();
+    }
+    if (loadResult.error || !loadResult.data) return NextResponse.json({ error: loadResult.error?.message ?? "Job not found" }, { status: 404 });
+    if ("delete_after_run" in (loadResult.data as Record<string, unknown>)) {
+      deleteAfterRun = Boolean((loadResult.data as Record<string, unknown>).delete_after_run);
+    }
 
     const payload: Record<string, unknown> = {
       last_finished_at: new Date().toISOString(),
@@ -32,7 +49,7 @@ export async function POST(req: Request, { params }: { params: { id: string; job
       last_error: errorText,
       updated_at: new Date().toISOString(),
     };
-    if (status === "completed" && existing.delete_after_run) {
+    if (status === "completed" && deleteAfterRun) {
       payload.enabled = false;
     }
 
